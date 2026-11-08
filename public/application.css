@@ -1,0 +1,267 @@
+.portal {
+  max-width: 1280px;
+  margin: auto;
+  padding: 60px 6% 90px;
+  min-height: 80vh;
+}
+.portal-intro {
+  border-bottom: 1px solid #ba965c40;
+  padding-bottom: 32px;
+  margin-bottom: 36px;
+}
+.portal-intro h1 {
+  font-size: clamp(42px, 6vw, 76px);
+}
+.portal-intro > p:last-child {
+  max-width: 760px;
+  color: #afb5b3;
+}
+.portal .eyebrow {
+  margin-bottom: 16px;
+}
+.columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 28px;
+  align-items: start;
+}
+.card {
+  background: #13191a;
+  border: 1px solid #ba965c40;
+  padding: 28px;
+  margin-bottom: 24px;
+  min-width: 0;
+}
+.card h2 {
+  font-size: 34px;
+  letter-spacing: -1px;
+  margin: 0 0 20px;
+}
+.card h3 {
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--gold);
+  margin: 15px 0;
+}
+.portal label {
+  display: block;
+  font:
+    14px/1.5 Arial,
+    sans-serif;
+  margin: 18px 0 7px;
+}
+.portal input:not([type="checkbox"]),
+.portal textarea,
+.portal select {
+  display: block;
+  width: 100%;
+  background: #0b1011;
+  border: 1px solid #65706a;
+  border-radius: 2px;
+  padding: 12px;
+  color: var(--text);
+  font:
+    16px/1.5 Arial,
+    sans-serif;
+}
+.portal textarea {
+  resize: vertical;
+  min-height: 110px;
+}
+.portal input:focus-visible,
+.portal textarea:focus-visible,
+.portal select:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+.portal .check {
+  display: flex;
+  gap: 12px;
+  align-items: start;
+}
+.check input {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  accent-color: var(--gold);
+}
+button,
+.portal .button {
+  cursor: pointer;
+  color: var(--text);
+  border: 1px solid #ba965c99;
+  background: #29271e;
+  padding: 12px 18px;
+  font:
+    12px/1.5 Arial,
+    sans-serif;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  min-height: 44px;
+  margin: 12px 8px 0 0;
+}
+button:hover {
+  background: #40392b;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.secondary {
+  background: transparent;
+}
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+.toolbar button,
+.toolbar .button {
+  margin: 0;
+}
+.toolbar label {
+  margin: 0;
+}
+.toolbar select {
+  width: auto;
+  min-width: 180px;
+}
+.rules,
+.plain {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.rules {
+  font:
+    15px/1.7 Arial,
+    sans-serif;
+  padding: 16px;
+  background: #0b1011;
+  border-left: 2px solid var(--gold);
+  max-height: 320px;
+  overflow: auto;
+}
+.counter {
+  text-align: right;
+  font: 13px Arial;
+  color: #afb5b3;
+  margin: 8px 0;
+}
+.tag {
+  display: inline-block;
+  color: #efcf94;
+  border: 1px solid #ba965c60;
+  padding: 3px 10px;
+  font: 12px/1.7 Arial;
+  letter-spacing: 1px;
+}
+.meta {
+  font: 13px/1.7 Arial;
+  color: #afb5b3;
+  overflow-wrap: anywhere;
+}
+.portal details {
+  margin: 20px 0;
+}
+.portal summary {
+  padding: 16px 0;
+}
+.portal details .card {
+  margin: 16px 0;
+}
+#message {
+  padding: 16px;
+  border: 1px solid #d59879;
+  background: #36251f;
+  font: 16px/1.6 Arial;
+}
+#message.success {
+  border-color: #9fae87;
+  background: #20291f;
+}
+.app-row {
+  display: block;
+  padding: 16px 0;
+  border-bottom: 1px solid #ba965c30;
+}
+.app-row span {
+  margin-right: 12px;
+}
+.app-row strong {
+  display: block;
+  font-weight: 400;
+  color: var(--gold);
+  font-size: 22px;
+}
+.history {
+  padding-left: 24px;
+}
+.history li {
+  margin: 12px 0;
+}
+.user-row {
+  border-top: 1px solid #ba965c30;
+  padding: 15px 0;
+}
+.user-row form {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.user-row label {
+  margin: 0;
+}
+.user-row select {
+  width: auto;
+}
+.user-row button {
+  margin: 0;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+}
+.link {
+  color: var(--gold);
+  text-decoration: underline;
+}
+.empty {
+  color: #afb5b3;
+  font-style: italic;
+}
+[hidden] {
+  display: none !important;
+}
+@media (max-width: 800px) {
+  .columns {
+    grid-template-columns: 1fr;
+  }
+  .portal {
+    padding: 36px 6%;
+  }
+  .card {
+    padding: 20px;
+  }
+  .portal-intro h1 {
+    letter-spacing: -1px;
+  }
+  .toolbar {
+    align-items: flex-start;
+  }
+  .toolbar select {
+    min-width: 0;
+  }
+  .user-row form {
+    display: block;
+  }
+  .user-row button {
+    margin-top: 12px;
+  }
+}
+
+.demo-banner { padding: 14px; background: #efcc80; color: #181818; text-align: center; font: bold 14px system-ui; }

@@ -1,0 +1,40 @@
+x-demo-env: &demo-env
+  MYTIKAS_DEMO: "1"
+  DEMO_PASSWORD: ${DEMO_PASSWORD:?Initialize demo secrets}
+  DISCORD_WEBHOOK_URL: ""
+services:
+  migrate:
+    environment: *demo-env
+  seed:
+    build: .
+    image: mytikas-local
+    init: true
+    environment:
+      <<: *demo-env
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+    command: ["node", "dist/demo/seed.js"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+  fixtures:
+    extends:
+      service: seed
+    command: ["node", "dist/demo/cli.js", "ready"]
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+  app:
+    environment: *demo-env
+    command: ["node", "dist/demo/server.js"]
+    ports: !override
+      - "127.0.0.1:8081:8080"
+    depends_on:
+      fixtures:
+        condition: service_completed_successfully
+  worker:
+    environment: *demo-env
+    command: ["node", "dist/demo/worker.js"]
+    depends_on:
+      fixtures:
+        condition: service_completed_successfully
