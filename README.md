@@ -1,3 +1,5 @@
+<img width="1280" height="640" alt="mytikas" src="https://github.com/user-attachments/assets/b2d134da-09d1-4997-a14b-804107803fc5" />
+
 # Mytikas local guild application
 
 See the [illustrated user manual](docs/USER-MANUAL.md) for applicant, staff, and demo walkthroughs.
