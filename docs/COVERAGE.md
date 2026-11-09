@@ -20,9 +20,9 @@ Raw directories are separate for backend, utilities and browser suites. Utility 
 
 Priority gaps toward 95%:
 
-1. P12/P07: web and admin CLI process paths; full shutdown deadline, worker crash/lease expiry and overlapping-worker behavior.
+1. P12/P07: web and admin CLI process paths and forced shutdown deadlines. Discord overlapping claims, lease expiry and SIGKILL-after-acceptance recovery now have real database/process tests.
 2. P12/P02: utility process error branches, PostgreSQL tool extraction, native restore execution, secret generator, screenshot/live-smoke entrypoints, and coverage reporters themselves. Separate container/recovery tests exercise some of these without contributing to this coverage group.
-3. P11: frontend error branches, all staff mutation ambiguity paths, visual snapshots and comprehensive accessibility checks. Chromium/Firefox workflows and a narrow two-host HTTPS/mobile/keyboard smoke pass locally; WebKit passes with CI-provisioned OS libraries.
-4. P08: successful managed-CA TLS chain and hostname verification, populated legacy upgrade under restricted owner roles, and published-image upgrade/rollback rehearsal.
+3. P11: frontend error branches, all staff mutation ambiguity paths, comprehensive all-page visual/accessibility checks. Desktop/mobile header and hero pixels now match the original commit exactly, and keyboard form/error behavior is tested. Chromium/Firefox workflows and a narrow two-host HTTPS/mobile/keyboard smoke pass locally; WebKit passes with CI-provisioned OS libraries.
+4. P08: managed-provider deployment and published-image upgrade/rollback rehearsal. Real PostgreSQL tests now verify trusted-CA TLS success, wrong-CA rejection and hostname mismatch, including migrations/readiness over TLS.
 
-Production dependency audit currently reports zero vulnerabilities. Development coverage dependencies have moderate audit findings; no force/downgrade was applied to hide them. Full OS image scanning and software inventory remain release follow-up work.
+Production dependency audit currently reports zero vulnerabilities. Development coverage dependencies have moderate audit findings; no force/downgrade was applied to hide them. OS image scanning and software inventory are now mandatory CI artifacts; see IMAGE-SECURITY.md for the explicit gate and remaining unfixed base-image findings.

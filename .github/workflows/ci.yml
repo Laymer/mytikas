@@ -50,6 +50,8 @@ jobs:
         browser: [chromium, firefox, webkit]
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 24
@@ -62,6 +64,8 @@ jobs:
           FRONTEND_COVERAGE: ${{ matrix.browser == 'chromium' && '1' || '0' }}
       - if: matrix.browser == 'chromium'
         run: node --import tsx tests/two-host.ts
+      - if: matrix.browser == 'chromium'
+        run: npm run test:visual
       - if: matrix.browser == 'chromium'
         run: FRONTEND_COVERAGE=1 npm run test:landing:browser
       - if: matrix.browser == 'chromium'
@@ -129,9 +133,41 @@ jobs:
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa
         with:
           path: landing-dist
+  image-security:
+    needs: container
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: tested-container
+          path: /tmp
+      - name: Scan the tested image and generate inventory
+        run: |
+          mkdir image-security
+          docker run --rm -v /tmp/mytikas-tested.tar:/scan/image.tar:ro -v "$PWD/image-security:/reports" aquasec/trivy@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb image --no-progress --scanners vuln --list-all-pkgs --format json --output /reports/vulnerabilities.json --input /scan/image.tar
+          docker run --rm -v "$PWD/image-security:/reports" aquasec/trivy@sha256:8f6bb947dbc528902e11f2f5be52f7b519f6a39d5d148f41166f2040499768fb convert --format cyclonedx --output /reports/inventory.cdx.json /reports/vulnerabilities.json
+      - name: Reject fixable high and critical findings
+        run: |
+          python3 - <<'PY'
+          import json
+          with open('image-security/vulnerabilities.json') as f:
+              report = json.load(f)
+          assert report.get('Results'), 'Missing image scan results'
+          findings = [v for r in report['Results'] for v in r.get('Vulnerabilities', [])]
+          blocking = [v for v in findings if v.get('FixedVersion') and v['Severity'] in ['HIGH', 'CRITICAL']]
+          print('Findings:', len(findings), 'Fixable high/critical:', len(blocking))
+          assert not blocking, [(v['VulnerabilityID'], v['PkgName']) for v in blocking]
+          PY
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: image-security
+          path: image-security
+          if-no-files-found: error
+          retention-days: 30
   ci-required:
     if: always()
-    needs: [quality, backend, browser, coverage, container, landing]
+    needs: [quality, backend, browser, coverage, container, image-security, landing]
     runs-on: ubuntu-24.04
     steps:
       - name: Require all mandatory jobs
@@ -177,8 +213,17 @@ jobs:
         run: |
           docker load -i /tmp/mytikas-tested.tar
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
-          docker tag mytikas-tested:latest "ghcr.io/laymer/mytikas:$COMMIT_SHA"
-          docker push "ghcr.io/laymer/mytikas:$COMMIT_SHA"
+          IMAGE_REF="ghcr.io/laymer/mytikas:$COMMIT_SHA"
+          TESTED_ID=$(docker image inspect --format '{{.Id}}' mytikas-tested:latest)
+          if docker manifest inspect "$IMAGE_REF" >/tmp/existing-manifest.json 2>/tmp/manifest-error; then
+            docker pull "$IMAGE_REF"
+            EXISTING_ID=$(docker image inspect --format '{{.Id}}' "$IMAGE_REF")
+            test "$EXISTING_ID" = "$TESTED_ID" || { echo 'Refusing to overwrite an immutable commit tag with a different image'; exit 1; }
+          else
+            grep -Eqi 'manifest unknown|no such manifest|not found' /tmp/manifest-error || { echo 'Registry lookup failed; refusing publication'; exit 1; }
+            docker tag mytikas-tested:latest "$IMAGE_REF"
+            docker push "$IMAGE_REF"
+          fi
           docker inspect --format '{{json .RepoDigests}}' "ghcr.io/laymer/mytikas:$COMMIT_SHA" > image-digest.json
           docker logout ghcr.io
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
