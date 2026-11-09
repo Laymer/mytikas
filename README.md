@@ -296,3 +296,5 @@ The public deployment uses an isolated database and Cloudflare Tunnel, with no a
 The [implementation tracker](docs/IMPLEMENTATION-PLAN.md) distinguishes verified implementation from outstanding live work. [Architecture contracts](docs/ARCHITECTURE.md) and the [cloud handoff](docs/CLOUD-HANDOFF.md) describe portable web/worker/migration entrypoints, external PostgreSQL TLS and runtime privileges. CI gates changes with `ci-required`; Pages and image publication run only after required jobs succeed on main.
 
 Run `npm run typecheck`, `npm run coverage:backend`, and `npm run coverage:utilities` for backend/tool checks. Browser compatibility uses `BROWSER=chromium|firefox|webkit npm run test:browser`; Chromium collects coverage with `FRONTEND_COVERAGE=1`, followed by the same setting for `npm run test:landing:browser`, then `npm run coverage:frontend`. `npm run coverage:check` validates the measured baseline. See the coverage report documentation for exclusions and remaining gaps.
+
+The [published-artifact verification record](docs/VERIFICATION.md) contains the tested source commit, immutable image digest, landing preview and remaining live-launch blockers.
