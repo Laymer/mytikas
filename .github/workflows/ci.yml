@@ -1,0 +1,62 @@
+name: CI
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: bash -n mytikas.sh
+      - run: npm run test:helper
+  integration:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [test, 'test:demo', 'test:browser']
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+        if: matrix.suite == 'test:browser'
+      - run: npm run ${{ matrix.suite }}
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - run: docker build -t mytikas-ci .
+      - run: |
+          export POSTGRES_PASSWORD=$(openssl rand -hex 32)
+          export SESSION_SECRET=$(openssl rand -hex 32)
+          docker compose -p mytikas-ci up --build --wait app worker
+          curl --fail http://127.0.0.1:8080/api/health
+      - if: always()
+        run: docker compose -p mytikas-ci down -v
+        env:
+          POSTGRES_PASSWORD: cleanup-placeholder
+          SESSION_SECRET: cleanup-placeholder-not-used-by-running-services
+  ci-required:
+    if: always()
+    needs: [quality, integration, container]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all mandatory jobs
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          jobs = json.loads(os.environ['RESULTS'])
+          assert jobs and all(job['result'] == 'success' for job in jobs.values()), jobs
+          PY
