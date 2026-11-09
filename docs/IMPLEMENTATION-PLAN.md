@@ -124,7 +124,7 @@ The empty remote permits one audited bootstrap publication. Subsequent feature c
 | P13.3 — Every PR least privilege pinned actions | ✅ Done | [Merged PR #2](https://github.com/Laymer/mytikas/pull/2); [passing complete CI](https://github.com/Laymer/mytikas/actions/runs/42594323149); scope/limitations below |
 | P13.4 — Deterministic merge fixtures | ✅ Done | [Merged PR #2](https://github.com/Laymer/mytikas/pull/2); [passing complete CI](https://github.com/Laymer/mytikas/actions/runs/42594323149); scope/limitations below |
 | P13.5 — Redacted failure artifacts | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
-| P13.6 — Immutable image publication and pull | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P13.6 — Immutable image publication and pull | ✅ Done | [Published-artifact evidence](VERIFICATION.md); custom-domain cutover remains pending |
 | P13.7 — Image security and inventory | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
 | P13.8 — Same-tested-commit publication | ✅ Done | [Merged PR #2](https://github.com/Laymer/mytikas/pull/2); [passing complete CI](https://github.com/Laymer/mytikas/actions/runs/42594323149); scope/limitations below |
 | P13.9 — Protection bypass regression checks | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
@@ -137,13 +137,13 @@ The empty remote permits one audited bootstrap publication. Subsequent feature c
 | P14.6 — Laptop-to-cloud migration | ✅ Done | [Merged PR #2](https://github.com/Laymer/mytikas/pull/2); [passing complete CI](https://github.com/Laymer/mytikas/actions/runs/42594323149); scope/limitations below |
 | P14.7 — Operational signals | ✅ Done | [Merged PR #2](https://github.com/Laymer/mytikas/pull/2); [passing complete CI](https://github.com/Laymer/mytikas/actions/runs/42594323149); scope/limitations below |
 | **P15 — Live cutover** | ⬜ To do | |
-| P15.1 — Export current DNS and Pages | ⬜ To do | |
+| P15.1 — Export current DNS and Pages | 🚧 In progress | Public DNS/Pages inventory recorded; complete private zone export pending |
 | P15.2 — Cloudflare zone onboarding | ⬜ To do | |
 | P15.3 — DNSSEC and nameservers | ⬜ To do | |
 | P15.4 — DNS-only Pages and named app tunnel | ⬜ To do | |
 | P15.5 — Public admin and reviewed rules | ⬜ To do | |
 | P15.6 — Private Discord webhook delivery | ⬜ To do | |
-| P15.7 — Validate new Pages before detach | ⬜ To do | |
+| P15.7 — Validate new Pages before detach | ✅ Done | [Published-artifact evidence](VERIFICATION.md); custom-domain cutover remains pending |
 | P15.8 — Custom-domain transfer and HTTPS | ⬜ To do | |
 | P15.9 — TLS DNS cache anonymous access | ⬜ To do | |
 | P15.10 — Test cutover rollback | ⬜ To do | |
@@ -192,3 +192,5 @@ The user confirmed Cloudflare and tunnel setup is not configured. Private `.env.
 
 
 Post-merge publication correctly stopped when the main run exposed an idle PostgreSQL connection error during restart/teardown. A follow-up handles idle-pool failures with a redacted event instead of an unhandled exception and tests actual backend termination/reconnection. No failed-commit image or Pages artifact was published.
+
+Published implementation artifacts, exact digest, pull/run smoke, current coverage and remaining live blockers are recorded in [VERIFICATION.md](VERIFICATION.md). This does not complete P16 or authorize an accepted-release tag before its evidence exists.
