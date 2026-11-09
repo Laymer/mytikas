@@ -57,3 +57,17 @@ Encrypt the dump before transferring it to private storage on another device. Wi
 - **Webhook/tunnel rotation:** revoke the old credential in its provider, update the private webhook environment or tunnel-token file, and recreate affected services. Keep the tunnel token out of `.env` interpolation and command arguments.
 - **Outbox recovery:** delivery is at least once. A crash after Discord accepts a request but before its database acknowledgement may produce a duplicate. Compare submission IDs/revisions when reviewing duplicates. Expired leases recover automatically. A `FAILED` job remains visible to staff; after fixing the webhook/rate issue, an operator can explicitly reset only a reviewed job to `PENDING`, set attempts to zero and clear its lease. This may duplicate a previously accepted message. Do not reset all jobs or delete immutable submissions.
 - **Worker health:** `node dist/worker-health.js` checks the local process ID file against a heartbeat younger than 45 seconds. Temporary Discord/Armory errors do not kill the process; inspect delivery status and lane-failure logs as well. Notification and Armory scheduling are independent. SIGTERM stops new claims and drains; a 30-second deadline exits with failure, inside the 45-second container grace period.
+
+## One-time upgrade of existing local/demo databases
+
+The original two migrations had no checksum column. Back up each existing stack before upgrading (`./mytikas.sh backup` or `./mytikas.sh demo backup`). Compare the applied migration names and original SQL against the audited repository version. Only after confirming they match, run the appropriate one-shot adoption command from the repository directory:
+
+```sh
+# Normal local stack; database must be running.
+docker compose --project-name mytikas --env-file .env -f compose.yaml run --rm --build -e ADOPT_MIGRATION_CHECKSUMS=1 migrate
+
+# Seeded demo stack; separate environment, project and database.
+docker compose --project-name mytikas-demo --env-file .env.demo -f compose.yaml -f compose.demo.yaml run --rm --build -e ADOPT_MIGRATION_CHECKSUMS=1 migrate
+```
+
+Then resume with `./mytikas.sh up` or `./mytikas.sh demo up`. The one-shot flag is not saved. Prefixing the helper with `ADOPT_MIGRATION_CHECKSUMS=1` is insufficient because Compose does not forward that ambient variable. Fresh public databases need no adoption. A recorded non-null checksum mismatch always fails, even when adoption is enabled; investigate instead of rewriting migration files.

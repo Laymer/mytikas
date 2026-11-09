@@ -12,6 +12,30 @@ async function checkpoint(page: import("@playwright/test").Page) {
   coverage.push(...await page.coverage.stopJSCoverage());
   await page.coverage.startJSCoverage({ resetOnNavigation: false });
 }
+// WebKit interception can omit Cookie/Origin from Request.allHeaders(). Rebuild
+// those transport headers from this page's own cookie jar and origin; retain the
+// intercepted CSRF token and body. Node fetch deliberately does not store the
+// response's rotated session cookie, matching a response lost at the tunnel.
+async function commitAndLoseResponse(
+  route: import("@playwright/test").Route,
+  page: import("@playwright/test").Page,
+  expectedStatus: number,
+) {
+  const request = route.request();
+  const headers = new Headers(await request.allHeaders());
+  const sourceOrigin = new URL(page.url()).origin;
+  assert.equal(new URL(request.url()).origin, sourceOrigin);
+  assert.ok(headers.get("x-csrf-token"), "Intercepted mutation must retain its CSRF token");
+  const cookies = await page.context().cookies(request.url());
+  headers.set("cookie", cookies.map(cookie => `${cookie.name}=${cookie.value}`).join("; "));
+  if (!headers.has("origin")) headers.set("origin", sourceOrigin);
+  const response = await fetch(request.url(), {
+    method: request.method(), headers, body: request.postData(),
+  });
+  const result = await response.json();
+  assert.equal(response.status, expectedStatus, result.error || "Intercepted mutation failed");
+  await route.abort("failed");
+}
 const h = await harness();
 let browser;
 try {
@@ -111,8 +135,7 @@ try {
   // Simulate a committed mutation whose response is lost at the tunnel.
   await applicant.route("**/api/application", async route => {
     if (route.request().method() !== "POST") return route.continue();
-    await route.fetch();
-    await route.abort("failed");
+    await commitAndLoseResponse(route, applicant, 200);
   });
   await applicant.getByRole("button", { name: "Resubmit application" }).click();
   await expect(applicant.locator(".tag")).toHaveText("SUBMITTED");
@@ -222,13 +245,7 @@ try {
   await mobile.getByLabel("Why do you want to join?").fill("Keep this application when the response is lost.");
   await mobile.getByRole("checkbox").check();
   await mobile.route("**/api/auth/register", async route => {
-    const request = route.request();
-    const response = await fetch(request.url(), {
-      method: "POST", headers: await request.allHeaders(), body: request.postData(),
-    });
-    assert.equal(response.status, 201);
-    await response.arrayBuffer();
-    await route.abort("failed");
+    await commitAndLoseResponse(route, mobile, 201);
   });
   await mobile.getByRole("button", { name: "Create account & apply" }).click();
   await expect(mobile.locator("#message")).toContainText("account may have been created");

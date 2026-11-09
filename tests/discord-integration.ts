@@ -44,6 +44,10 @@ try {
   const env = { ...process.env, DATABASE_URL: h.cfg.databaseUrl, SESSION_SECRET: h.cfg.sessionSecret,
     APP_ORIGIN: h.cfg.origin, DEPLOYMENT_PROFILE: "local", INGRESS_MODE: "none", MYTIKAS_DEMO: "0",
     DISCORD_WEBHOOK_URL: "", WORKER_ID_FILE: join(directory, "id") };
+  // Exercise the missing identity-file failure deterministically, rather than
+  // depending on whether health polling wins the worker startup race.
+  const missingHealth = spawn(process.execPath, ["--import", "tsx", "src/worker-health.ts"], { env, stdio: "ignore" });
+  assert.equal((await once(missingHealth, "exit"))[0], 1);
   const workerProcess = spawn(process.execPath, ["--import", "tsx", "src/worker.ts"], { env, stdio: "ignore" });
   const exited = once(workerProcess, "exit");
   try {
