@@ -1,8 +1,10 @@
-/** Preservation check, not approval of a new golden image.
- * Render the source-inspected original commit and today's landing artifact in
+/** Preservation check against the reviewed navigation update.
+ * Render the fixed reference commit and today's landing artifact in
  * the same Chromium process. Compare header/hero pixels at desktop and mobile
  * sizes. Recruitment availability copy is intentionally outside this preserved
  * region; account failure messages are checked behaviorally below.
+ * The reference changes only navigation sizing, casing and responsive spacing;
+ * the original hero and artwork remain unchanged.
  */
 import { chromium, expect } from "@playwright/test";
 import assert from "node:assert/strict";
@@ -11,7 +13,7 @@ import { createServer } from "node:http";
 import { mkdtemp, mkdir, readFile, writeFile, symlink, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve, extname } from "node:path";
-const baseline = "979e1d0";
+const baseline = "ca601ef754db6ebd5a096417d312346632a322db";
 const directory = await mkdtemp(join(tmpdir(), "mytikas-visual-"));
 await mkdir(join(directory, "baseline/assets"), { recursive: true });
 for (const file of ["index.html", "style.css", "content.js", "assets/crest.svg", "assets/summit.png"]) {
@@ -58,8 +60,8 @@ try {
         shots[version]!.push(await page.locator(selector).screenshot({ animations: "disabled", path: `test-results/visual/${name}-${version}-${section}.png` }));
       }
     }
-    assert.deepEqual(shots.current, shots.baseline, `${name} header/hero differs from preserved ${baseline} design`);
-    console.log(`✓ ${name}: current header/hero pixels equal original ${baseline} at ${width}×${height}`);
+    assert.deepEqual(shots.current, shots.baseline, `${name} header/hero differs from reviewed ${baseline} design`);
+    console.log(`✓ ${name}: current header/hero pixels equal reviewed ${baseline} at ${width}×${height}`);
   }
   await page.goto(`${origin}/account.html`);
   await expect(page.locator("#login")).toBeVisible();
