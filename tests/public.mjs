@@ -1,0 +1,44 @@
+import assert from 'node:assert/strict';
+import { mkdtempSync, mkdirSync, copyFileSync, writeFileSync, readFileSync, statSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+const root = mkdtempSync(join(tmpdir(), 'mytikas-public-test-'));
+try {
+  mkdirSync(join(root, 'scripts'));
+  mkdirSync(join(root, 'bin'));
+  copyFileSync('scripts/public.mjs', join(root, 'scripts/public.mjs'));
+  const record = join(root, 'calls');
+  writeFileSync(join(root,'bin/docker'), '#!/usr/bin/env node\nimport("node:fs").then(fs=>{fs.appendFileSync(process.env.RECORD,JSON.stringify({args:process.argv.slice(2),override:process.env.POSTGRES_PASSWORD})+"\\n"); if(process.argv.includes("pg_dump")){process.stdout.write("fixture-backup"); if(process.env.FAIL_BACKUP)process.exitCode=1;} });\n', {mode:0o700});
+  const env = {...process.env, PATH:join(root,'bin')+':'+process.env.PATH, RECORD:record, POSTGRES_PASSWORD:'ambient-override'};
+  const run = (...args) => spawnSync(process.execPath,[join(root,'scripts/public.mjs'),...args],{env,encoding:'utf8'});
+  assert.equal(run('init').status,0);
+  const initial = readFileSync(join(root,'.env.public'),'utf8');
+  assert(!initial.includes('ambient-override'));
+  assert.equal(statSync(join(root,'.env.public')).mode & 0o777, 0o600);
+  assert.equal(run('init').status,0);
+  assert.equal(readFileSync(join(root,'.env.public'),'utf8'),initial);
+  assert.equal(run('up').status,1);
+  writeFileSync(join(root,'.public/tunnel-token'),'fixture-token');
+  assert.equal(run('up').status,0);
+  const calls=readFileSync(record,'utf8').trim().split('\n').map(JSON.parse);
+  for(const c of calls){assert.equal(c.override,undefined);if(c.args.includes('--project-name'))assert(c.args.includes('mytikas-public'));}
+  const removal=calls.findIndex(c=>c.args.includes('rm'));
+  const app=calls.findIndex(c=>c.args.includes('--build'));
+  const tunnel=calls.findIndex(c=>c.args.includes('--force-recreate'));
+  assert(removal>=0 && removal<app && app<tunnel);
+  assert.equal(run('backup','backups/check.dump').status,0);
+  assert.equal(readFileSync(join(root,'backups/check.dump'),'utf8'),'fixture-backup');
+  assert.equal(run('backup','backups/check.dump').status,1);
+  env.FAIL_BACKUP='1';
+  assert.equal(run('backup','backups/failure.dump').status,1);
+  assert.throws(()=>statSync(join(root,'backups/failure.dump')));
+  assert.equal(run('down','--volumes').status,1);
+  assert.equal(run('logs','--details').status,1);
+  const compose=readFileSync('compose.public.yaml','utf8');
+  assert(!/^\s+ports:/m.test(compose));
+  assert.match(compose,/network_mode: service:app/);
+  assert.match(compose,/--token-file/);
+  assert(!compose.includes('dist/demo/'));
+  console.log('Public helper isolation, initialization, replacement, and backup tests passed.');
+} finally {rmSync(root,{recursive:true,force:true});}

@@ -14,20 +14,37 @@ export function message(text, success = false) {
   if (text) m.focus();
 }
 export async function api(path, body) {
-  const res = await fetch(path, {
-    method: body === undefined ? "GET" : "POST",
-    credentials: "same-origin",
-    headers:
-      body === undefined
-        ? {}
-        : {
-            "Content-Type": "application/json",
-            "X-CSRF-Token": csrfToken || "",
-          },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "The request failed.");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  let res, data;
+  try {
+    res = await fetch(path, {
+      method: body === undefined ? "GET" : "POST",
+      credentials: "same-origin",
+      signal: controller.signal,
+      headers: body === undefined ? {} : {
+        "Content-Type": "application/json", "X-CSRF-Token": csrfToken || "",
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    data = await res.json();
+  } catch {
+    const error = new Error(body === undefined
+      ? "The service could not be reached. Please try again when the connection returns."
+      : "The response was lost. Your change may have been saved. Check the current state before trying again.");
+    error.uncertain = body !== undefined;
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!res.ok) {
+    const error = new Error(res.status === 401
+      ? "Your session has expired. Sign in again to continue."
+      : data.error || "The service could not complete the request. Please try again later.");
+    error.status = res.status;
+    error.uncertain = body !== undefined && res.status >= 500;
+    throw error;
+  }
   if (data.csrfToken) csrfToken = data.csrfToken;
   return data;
 }
@@ -39,12 +56,19 @@ export function bindForm(form, handler) {
     const b = $("button[type=submit]", form);
     b.disabled = true;
     message("");
+    let uncertain = false;
     try {
       await handler(new FormData(form));
     } catch (error) {
+      uncertain = Boolean(error.uncertain);
       message(error.message);
+      if (uncertain) {
+        const reload = node("a", "Reload current account state");
+        reload.href = location.href;
+        form.append(reload);
+      }
     } finally {
-      b.disabled = false;
+      b.disabled = uncertain;
     }
   });
 }
@@ -54,12 +78,19 @@ export function action(label, handler) {
   b.addEventListener("click", async () => {
     b.disabled = true;
     message("");
+    let uncertain = false;
     try {
       await handler();
     } catch (e) {
+      uncertain = Boolean(e.uncertain);
       message(e.message);
+      if (uncertain) {
+        const reload = node("a", "Reload current state before trying again");
+        reload.href = location.href;
+        b.after(reload);
+      }
     } finally {
-      b.disabled = false;
+      b.disabled = uncertain;
     }
   });
   return b;
@@ -178,4 +209,9 @@ export function applicationView(data) {
   }
   box.append(list);
   return box;
+}
+
+// Only application review paths are accepted; user permissions are checked after login.
+export function reviewDestination(value) {
+  return typeof value === "string" && /^\/admin\.html(?:#[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?$/i.test(value) ? value : null;
 }

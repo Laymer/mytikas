@@ -2,13 +2,30 @@ import { randomUUID } from "node:crypto";
 import type { Pool } from "./db.js";
 import type { PoolClient } from "pg";
 import { limitedText } from "./armory.js";
-export function discordPayload(
-  character: string,
-  applicationId: string,
-  origin: string,
-) {
+export type DiscordSubmission = {
+  id: string;
+  application_id: string;
+  revision: number;
+  character_name: string;
+  motivation: string;
+  rules_id: number;
+  accepted_at: Date | string;
+};
+// Escape Markdown and neutralize mentions, including text displayed outside Discord clients.
+const discordText = (value: string, limit: number) =>
+  value.replace(/[\\`*_{}\[\]()<>~|>#]/g, "\\$&").replace(/@/g, "@\u200b").slice(0, limit);
+export function discordPayload(submission: DiscordSubmission, origin: string) {
+  const review = new URL(`/admin.html#${encodeURIComponent(submission.application_id)}`, origin).href;
   return {
-    content: `Guild application: ${character}\nReference: ${applicationId}\n${origin}/admin.html#${applicationId}`,
+    content: `Guild application: ${discordText(submission.character_name, 200)}\nReference: ${submission.application_id}\n${review}`,
+    embeds: [{
+      title: "Application submission",
+      fields: [
+        { name: "Motivation", value: discordText(submission.motivation, 1000) || "—" },
+        { name: "Submission", value: `${submission.id} · revision ${submission.revision}` },
+        { name: "Rules accepted", value: `Version ${submission.rules_id} · ${new Date(submission.accepted_at).toISOString()}` },
+      ],
+    }],
     allowed_mentions: { parse: [] },
   };
 }
@@ -56,7 +73,7 @@ async function deliverOne(pool: PoolClient, webhook: string, origin: string) {
   const {
     rows: [submission],
   } = await pool.query(
-    "SELECT application_id,character_name FROM submissions WHERE id=$1",
+    "SELECT id,application_id,revision,character_name,motivation,rules_id,accepted_at FROM submissions WHERE id=$1",
     [job.submission_id],
   );
   let status = "PENDING",
@@ -72,11 +89,7 @@ async function deliverOne(pool: PoolClient, webhook: string, origin: string) {
       signal: AbortSignal.timeout(10000),
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(
-        discordPayload(
-          submission.character_name,
-          submission.application_id,
-          origin,
-        ),
+        discordPayload(submission, origin),
       ),
     });
     if (response.ok) {
@@ -122,6 +135,7 @@ async function deliverOne(pool: PoolClient, webhook: string, origin: string) {
  delivered_at=CASE WHEN $3='DELIVERED' THEN now() ELSE NULL END WHERE id=$1 AND lease_token=$2`,
     [job.id, token, status, error, delay],
   );
+  console.info(JSON.stringify({ event: "discord_delivery", jobId: job.id, submissionId: job.submission_id, status, error, attempt: job.attempts }));
   if (rateLimited) {
     await pool.query(
       `UPDATE discord_delivery_state SET not_before=now()+($1 * interval '1 second') WHERE id=1`,

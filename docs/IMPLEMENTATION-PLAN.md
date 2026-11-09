@@ -17,125 +17,125 @@ The empty remote permits one audited bootstrap publication. Subsequent feature c
 | E07 — Discord outbox retries | ✅ Done locally | Baseline 979e1d0; 22 integration checks pass; public acceptance pending |
 | E08 — Containers helpers backups demo | ✅ Done locally | Baseline 979e1d0; 22 integration checks pass; public acceptance pending |
 | **B — Repository and CI bootstrap** | ⬜ To do | |
-| B01 — Audit files and full history | ⬜ To do | |
-| B02 — Self-contained assets and notices | ⬜ To do | |
-| B03 — Tracker and architecture | ⬜ To do | |
-| B04 — Initial mandatory CI | ⬜ To do | |
-| B05 — Stable ci-required aggregate | ⬜ To do | |
-| B06 — Audited publication and successful remote CI | ⬜ To do | |
-| B07 — Enforced main protection | ⬜ To do | |
-| B08 — Failing draft PR cannot merge | ⬜ To do | |
+| B01 — Audit files and full history | ✅ Done | Bootstrap [1ec6b8d](https://github.com/Laymer/mytikas/commit/1ec6b8d); [passing CI](https://github.com/Laymer/mytikas/actions/runs/42592311792); [rejected probe PR #1](https://github.com/Laymer/mytikas/pull/1) |
+| B02 — Self-contained assets and notices | ✅ Done | Bootstrap [1ec6b8d](https://github.com/Laymer/mytikas/commit/1ec6b8d); [passing CI](https://github.com/Laymer/mytikas/actions/runs/42592311792); [rejected probe PR #1](https://github.com/Laymer/mytikas/pull/1) |
+| B03 — Tracker and architecture | ✅ Done | Bootstrap [1ec6b8d](https://github.com/Laymer/mytikas/commit/1ec6b8d); [passing CI](https://github.com/Laymer/mytikas/actions/runs/42592311792); [rejected probe PR #1](https://github.com/Laymer/mytikas/pull/1) |
+| B04 — Initial mandatory CI | ✅ Done | Bootstrap [1ec6b8d](https://github.com/Laymer/mytikas/commit/1ec6b8d); [passing CI](https://github.com/Laymer/mytikas/actions/runs/42592311792); [rejected probe PR #1](https://github.com/Laymer/mytikas/pull/1) |
+| B05 — Stable ci-required aggregate | ✅ Done | Bootstrap [1ec6b8d](https://github.com/Laymer/mytikas/commit/1ec6b8d); [passing CI](https://github.com/Laymer/mytikas/actions/runs/42592311792); [rejected probe PR #1](https://github.com/Laymer/mytikas/pull/1) |
+| B06 — Audited publication and successful remote CI | ✅ Done | Bootstrap [1ec6b8d](https://github.com/Laymer/mytikas/commit/1ec6b8d); [passing CI](https://github.com/Laymer/mytikas/actions/runs/42592311792); [rejected probe PR #1](https://github.com/Laymer/mytikas/pull/1) |
+| B07 — Enforced main protection | ✅ Done | Bootstrap [1ec6b8d](https://github.com/Laymer/mytikas/commit/1ec6b8d); [passing CI](https://github.com/Laymer/mytikas/actions/runs/42592311792); [rejected probe PR #1](https://github.com/Laymer/mytikas/pull/1) |
+| B08 — Failing draft PR cannot merge | ✅ Done | Bootstrap [1ec6b8d](https://github.com/Laymer/mytikas/commit/1ec6b8d); [passing CI](https://github.com/Laymer/mytikas/actions/runs/42592311792); [rejected probe PR #1](https://github.com/Laymer/mytikas/pull/1) |
 | **P01 — Architecture contracts** | ⬜ To do | |
-| P01.1 — Origins profiles and acceptance | ⬜ To do | |
-| P01.2 — Shared configuration | ⬜ To do | |
-| P01.3 — Independent subsystem tests | ⬜ To do | |
-| P01.4 — Ownership and migration reservations | ⬜ To do | |
-| P01.5 — PR template | ⬜ To do | |
+| P01.1 — Origins profiles and acceptance | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P01.2 — Shared configuration | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P01.3 — Independent subsystem tests | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P01.4 — Ownership and migration reservations | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P01.5 — PR template | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
 | **P02 — Coverage** | ⬜ To do | |
-| P02.1 — Node c8 source-map coverage | ⬜ To do | |
-| P02.2 — Chromium Istanbul coverage | ⬜ To do | |
-| P02.3 — Unexecuted owned files at zero | ⬜ To do | |
-| P02.4 — Separate backend frontend utilities | ⬜ To do | |
-| P02.5 — Isolated deterministic reports | ⬜ To do | |
-| P02.6 — PR-base nonregression gate | ⬜ To do | |
-| P02.7 — Reports and gap list | ⬜ To do | |
+| P02.1 — Node c8 source-map coverage | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P02.2 — Chromium Istanbul coverage | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P02.3 — Unexecuted owned files at zero | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P02.4 — Separate backend frontend utilities | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P02.5 — Isolated deterministic reports | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P02.6 — PR-base nonregression gate | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P02.7 — Reports and gap list | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
 | **P03 — Landing artifact** | ⬜ To do | |
-| P03.1 — Reproducible landing build | ⬜ To do | |
-| P03.2 — Allowlisted public content | ⬜ To do | |
-| P03.3 — Application origin links | ⬜ To do | |
-| P03.4 — Root and project asset paths | ⬜ To do | |
-| P03.5 — CSP and bounded availability | ⬜ To do | |
-| P03.6 — Outage content and retry | ⬜ To do | |
-| P03.7 — Tested Pages workflow | ⬜ To do | |
+| P03.1 — Reproducible landing build | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P03.2 — Allowlisted public content | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P03.3 — Application origin links | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P03.4 — Root and project asset paths | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P03.5 — CSP and bounded availability | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P03.6 — Outage content and retry | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P03.7 — Tested Pages workflow | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
 | **P04 — Application UX** | ⬜ To do | |
-| P04.1 — Same-origin app and APIs | ⬜ To do | |
-| P04.2 — Public Home navigation | ⬜ To do | |
-| P04.3 — Validated login return | ⬜ To do | |
-| P04.4 — Reject unsafe destinations | ⬜ To do | |
-| P04.5 — Bounded requests and error messages | ⬜ To do | |
-| P04.6 — Preserve form content and prevent replay | ⬜ To do | |
-| P04.7 — Recover ambiguous submission | ⬜ To do | |
-| P04.8 — Prototype privacy and account wording | ⬜ To do | |
+| P04.1 — Same-origin app and APIs | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P04.2 — Public Home navigation | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P04.3 — Validated login return | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P04.4 — Reject unsafe destinations | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P04.5 — Bounded requests and error messages | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P04.6 — Preserve form content and prevent replay | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P04.7 — Recover ambiguous submission | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P04.8 — Prototype privacy and account wording | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
 | **P05 — Ingress security** | ⬜ To do | |
-| P05.1 — Validate public configuration | ⬜ To do | |
-| P05.2 — Narrow loopback proxy trust | ⬜ To do | |
-| P05.3 — Secure cookies and session behavior | ⬜ To do | |
-| P05.4 — Validated Cloudflare identity | ⬜ To do | |
-| P05.5 — Configured origin links | ⬜ To do | |
-| P05.6 — Session-free availability CORS | ⬜ To do | |
-| P05.7 — Ingress security regression tests | ⬜ To do | |
+| P05.1 — Validate public configuration | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P05.2 — Narrow loopback proxy trust | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P05.3 — Secure cookies and session behavior | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P05.4 — Validated Cloudflare identity | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P05.5 — Configured origin links | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P05.6 — Session-free availability CORS | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P05.7 — Ingress security regression tests | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
 | **P06 — Discord** | ⬜ To do | |
-| P06.1 — Immutable submission payload | ⬜ To do | |
-| P06.2 — Character motivation rules and review URL | ⬜ To do | |
-| P06.3 — No private fields or mentions; bounded payload | ⬜ To do | |
-| P06.4 — Submission and resubmission enqueue | ⬜ To do | |
-| P06.5 — Retry and duplicate recovery | ⬜ To do | |
-| P06.6 — Payload retry and outage tests | ⬜ To do | |
+| P06.1 — Immutable submission payload | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P06.2 — Character motivation rules and review URL | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P06.3 — No private fields or mentions; bounded payload | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P06.4 — Submission and resubmission enqueue | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P06.5 — Retry and duplicate recovery | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P06.6 — Payload retry and outage tests | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
 | **P07 — Worker lifecycle** | ⬜ To do | |
-| P07.1 — Independent bounded lanes | ⬜ To do | |
-| P07.2 — Leases and multi-worker safety | ⬜ To do | |
-| P07.3 — Heartbeat and health command | ⬜ To do | |
-| P07.4 — Bounded worker shutdown | ⬜ To do | |
-| P07.5 — Bounded web shutdown | ⬜ To do | |
-| P07.6 — Redacted structured logs | ⬜ To do | |
-| P07.7 — Latency restart overlap signal tests | ⬜ To do | |
+| P07.1 — Independent bounded lanes | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P07.2 — Leases and multi-worker safety | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P07.3 — Heartbeat and health command | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P07.4 — Bounded worker shutdown | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P07.5 — Bounded web shutdown | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P07.6 — Redacted structured logs | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P07.7 — Latency restart overlap signal tests | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
 | **P08 — Database** | ⬜ To do | |
-| P08.1 — External DB and bounded pools | ⬜ To do | |
-| P08.2 — Verified TLS and CA | ⬜ To do | |
-| P08.3 — Checksums and adoption | ⬜ To do | |
-| P08.4 — Serialized additive migrations | ⬜ To do | |
-| P08.5 — Separate owner runtime grants | ⬜ To do | |
-| P08.6 — Schema readiness and liveness | ⬜ To do | |
-| P08.7 — Migration TLS and preservation tests | ⬜ To do | |
+| P08.1 — External DB and bounded pools | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P08.2 — Verified TLS and CA | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P08.3 — Checksums and adoption | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P08.4 — Serialized additive migrations | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P08.5 — Separate owner runtime grants | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P08.6 — Schema readiness and liveness | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P08.7 — Migration TLS and preservation tests | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
 | **P09 — Public laptop stack** | ⬜ To do | |
-| P09.1 — Separate public project and secrets | ⬜ To do | |
-| P09.2 — Pinned namespace-sharing tunnel | ⬜ To do | |
-| P09.3 — No public-profile host ports | ⬜ To do | |
-| P09.4 — Private token injection | ⬜ To do | |
-| P09.5 — Public operations helper | ⬜ To do | |
-| P09.6 — Readiness migration and tunnel recreation | ⬜ To do | |
-| P09.7 — Prerequisite doctor | ⬜ To do | |
-| P09.8 — Windows WSL sleep recovery docs | ⬜ To do | |
-| P09.9 — Isolation and recovery tests | ⬜ To do | |
+| P09.1 — Separate public project and secrets | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P09.2 — Pinned namespace-sharing tunnel | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P09.3 — No public-profile host ports | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P09.4 — Private token injection | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P09.5 — Public operations helper | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P09.6 — Readiness migration and tunnel recreation | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P09.7 — Prerequisite doctor | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P09.8 — Windows WSL sleep recovery docs | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P09.9 — Isolation and recovery tests | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
 | **P10 — Recovery** | ⬜ To do | |
-| P10.1 — Private public backups | ⬜ To do | |
-| P10.2 — Safe fresh-target restore | ⬜ To do | |
-| P10.3 — Automated restored authentication/data drill | ⬜ To do | |
-| P10.4 — Backup cadence and encrypted offsite copy | ⬜ To do | |
-| P10.5 — Rotation migration outbox rollback runbook | ⬜ To do | |
+| P10.1 — Private public backups | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P10.2 — Safe fresh-target restore | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P10.3 — Automated restored authentication/data drill | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P10.4 — Backup cadence and encrypted offsite copy | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P10.5 — Rotation migration outbox rollback runbook | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
 | **P11 — Browser regression** | ⬜ To do | |
-| P11.1 — Two-host trusted HTTPS harness | ⬜ To do | |
-| P11.2 — Three browser engines and Chromium coverage | ⬜ To do | |
-| P11.3 — Navigation return permissions sessions | ⬜ To do | |
-| P11.4 — Offline ambiguous and tunnel errors | ⬜ To do | |
-| P11.5 — Visual keyboard labels focus mobile | ⬜ To do | |
-| P11.6 — Frontend error coverage gaps | ⬜ To do | |
+| P11.1 — Two-host trusted HTTPS harness | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P11.2 — Three browser engines and Chromium coverage | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P11.3 — Navigation return permissions sessions | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P11.4 — Offline ambiguous and tunnel errors | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P11.5 — Visual keyboard labels focus mobile | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P11.6 — Frontend error coverage gaps | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
 | **P12 — Backend regression** | ⬜ To do | |
-| P12.1 — Registration authentication isolation | ⬜ To do | |
-| P12.2 — Transitions rules concurrency roles | ⬜ To do | |
-| P12.3 — Armory failure races | ⬜ To do | |
-| P12.4 — Discord failure and crash recovery | ⬜ To do | |
-| P12.5 — Configuration CLI helper failure paths | ⬜ To do | |
-| P12.6 — Profile and fixture isolation | ⬜ To do | |
-| P12.7 — Coverage gaps and gate | ⬜ To do | |
+| P12.1 — Registration authentication isolation | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P12.2 — Transitions rules concurrency roles | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P12.3 — Armory failure races | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P12.4 — Discord failure and crash recovery | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P12.5 — Configuration CLI helper failure paths | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P12.6 — Profile and fixture isolation | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P12.7 — Coverage gaps and gate | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
 | **P13 — CI and artifacts** | ⬜ To do | |
-| P13.1 — Typecheck lint ShellCheck | ⬜ To do | |
-| P13.2 — Parallel isolated mandatory jobs | ⬜ To do | |
-| P13.3 — Every PR least privilege pinned actions | ⬜ To do | |
-| P13.4 — Deterministic merge fixtures | ⬜ To do | |
-| P13.5 — Redacted failure artifacts | ⬜ To do | |
-| P13.6 — Immutable image publication and pull | ⬜ To do | |
-| P13.7 — Image security and inventory | ⬜ To do | |
-| P13.8 — Same-tested-commit publication | ⬜ To do | |
-| P13.9 — Protection bypass regression checks | ⬜ To do | |
+| P13.1 — Typecheck lint ShellCheck | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P13.2 — Parallel isolated mandatory jobs | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P13.3 — Every PR least privilege pinned actions | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P13.4 — Deterministic merge fixtures | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P13.5 — Redacted failure artifacts | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P13.6 — Immutable image publication and pull | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P13.7 — Image security and inventory | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P13.8 — Same-tested-commit publication | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P13.9 — Protection bypass regression checks | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
 | **P14 — Cloud handoff** | ⬜ To do | |
-| P14.1 — Portable web worker migration entrypoints | ⬜ To do | |
-| P14.2 — External DB and secrets | ⬜ To do | |
-| P14.3 — Ingress sizing pool health contracts | ⬜ To do | |
-| P14.4 — Deployment order | ⬜ To do | |
-| P14.5 — Upgrade rollback rehearsal | ⬜ To do | |
-| P14.6 — Laptop-to-cloud migration | ⬜ To do | |
-| P14.7 — Operational signals | ⬜ To do | |
+| P14.1 — Portable web worker migration entrypoints | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P14.2 — External DB and secrets | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P14.3 — Ingress sizing pool health contracts | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P14.4 — Deployment order | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P14.5 — Upgrade rollback rehearsal | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P14.6 — Laptop-to-cloud migration | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P14.7 — Operational signals | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
 | **P15 — Live cutover** | ⬜ To do | |
 | P15.1 — Export current DNS and Pages | ⬜ To do | |
 | P15.2 — Cloudflare zone onboarding | ⬜ To do | |
@@ -160,12 +160,24 @@ The empty remote permits one audited bootstrap publication. Subsequent feature c
 | P16.9 — Rebuild tunnel recovery isolation | ⬜ To do | |
 | P16.10 — Timestamp device commit digest evidence | ⬜ To do | |
 | **P17 — Closure** | ⬜ To do | |
-| P17.1 — README and manual | ⬜ To do | |
-| P17.2 — Verified operations guides | ⬜ To do | |
-| P17.3 — Coverage gaps limitations | ⬜ To do | |
-| P17.4 — Tracker evidence reconciliation | ⬜ To do | |
-| P17.5 — Accepted release tag and artifact provenance | ⬜ To do | |
+| P17.1 — README and manual | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P17.2 — Verified operations guides | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P17.3 — Coverage gaps limitations | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P17.4 — Tracker evidence reconciliation | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P17.5 — Accepted release tag and artifact provenance | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
 
 ## Verification log
 
 2026-11-09: baseline build, helper tests and all 22 isolated PostgreSQL integration checks passed. Additional implementation and verification are ongoing. No public release, domain cutover, or live showcase acceptance has been claimed.
+
+## Implementation evidence and remaining work
+
+The bootstrap is public, CI passed after retrying as a public repository, and main protection enforces current `ci-required`, PRs, administrator enforcement and resolved conversations. Deliberately failing draft PR #1 was blocked by GitHub and closed without a bypass.
+
+Feature work is consolidated in one integration branch/PR rather than the proposed per-subsystem PR sequence. Three agents edited disjoint subsystem files in the shared checkout while the coordinator owned package/CI integration; independent cross-reviews corrected ambiguous frontend replay handling and schema readiness. This is a deviation from the proposed worktree-per-feature delivery, not evidence that separate feature PRs were merged.
+
+Local checks passed: full baseline integration/demo tests; ingress secure cookies/CSRF/CORS/spoofing; migration checksums/adoption/TLS fail-closed/data preservation; runtime non-owner privileges; immutable Discord payload and independent worker lanes; heartbeat/SIGTERM; helper and landing unit tests; Chromium/Firefox workflows; two-host certificate-pinned HTTPS browser smoke; real isolated public Compose startup/recreation/persistence/no host ports; PostgreSQL 18 backup/restore/login/history drill; typechecking and ShellCheck. No live Discord or Blizzard calls were used by these tests.
+
+Remaining explicit gaps: full visual snapshot comparison and comprehensive accessibility audits; exhaustive concurrency/crash/expired-lease and provider TLS-success cases; public Docker restore against a real public stack; OS image vulnerability inventory and published-image upgrade/rollback rehearsal; full protection tests for stale/skipped/missing reports beyond aggregate/gate unit tests; DNS zone export and Cloudflare onboarding; live administrator/rules/webhook setup; Pages binding cutover; all external showcase acceptance and release tagging. Coverage is measured rather than assumed; see COVERAGE.md. Some implemented rows remain in progress until merged CI evidence and these validations are reconciled.
+
+Public DNS inventory confirms registrar nameservers and old Pages binding on 2026-11-09. This is not a full zone export. No nameserver/domain changes or live public tunnel startup have been performed. No Cloudflare plugin was found. Live cutover requires the account-side tunnel/DNS setup described in CUTOVER.md.

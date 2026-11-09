@@ -8,7 +8,7 @@ for (const object of objects) {
   if (git('cat-file', '-t', oid).toString().trim() !== 'blob') continue;
   blobs++;
   const bytes = git('cat-file', 'blob', oid);
-  if (/(?:^|\/)(?:\.env(?:\.(?!example$)[^/]+)?|[^/]+\.(?:dump|backup|pem|key))$/.test(path)) {
+  if (!path.endsWith('.example') && /(?:^|\/)(?:\.env(?:\.(?!example$)[^/]+)?|[^/]+\.(?:dump|backup|pem|key))$/.test(path)) {
     console.error(`Review sensitive filename: ${path}`); findings++;
   }
   if (bytes.includes(0)) continue;

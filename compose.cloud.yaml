@@ -1,0 +1,54 @@
+# Provider-neutral process definitions. Supply a local loopback HTTPS ingress sidecar
+# or equivalent pod networking separately; this template publishes no listener.
+x-process: &process
+  image: ${MYTIKAS_IMAGE:?Supply a tested registry image by sha256 digest}
+  init: true
+  stop_grace_period: 45s
+  restart: unless-stopped
+  secrets: [database_ca]
+  environment: &environment
+    NODE_ENV: production
+    DEPLOYMENT_PROFILE: cloud
+    MYTIKAS_DEMO: "0"
+    INGRESS_MODE: proxy-loopback
+    APP_ORIGIN: ${APP_ORIGIN:?Set HTTPS application origin}
+    PUBLIC_SITE_ORIGIN: ${PUBLIC_SITE_ORIGIN:?Set HTTPS landing origin}
+    PORT: 8080
+    DATABASE_URL: ${DATABASE_URL:?Set non-owner runtime connection}
+    DATABASE_TLS: verify-full
+    DATABASE_CA_FILE: /run/secrets/database_ca
+    DATABASE_POOL_MAX: ${DATABASE_POOL_MAX:-10}
+    DATABASE_CONNECT_TIMEOUT_MS: 5000
+    DATABASE_QUERY_TIMEOUT_MS: 15000
+    SESSION_SECRET: ${SESSION_SECRET:?Inject a random persistent session secret}
+    DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+services:
+  migrate:
+    <<: *process
+    command: [node, dist/migrate.js]
+    restart: "no"
+    profiles: [migration]
+    environment:
+      <<: *environment
+      DATABASE_URL: ${MIGRATION_DATABASE_URL:?Inject migration-owner connection for deployment}
+      DATABASE_POOL_MAX: 1
+  app:
+    <<: *process
+    command: [node, dist/server.js]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:8080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  worker:
+    <<: *process
+    command: [node, dist/worker.js]
+    healthcheck:
+      test: [CMD, node, dist/worker-health.js]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+secrets:
+  database_ca:
+    file: ${DATABASE_CA_HOST_FILE:?Supply trusted PostgreSQL CA file}

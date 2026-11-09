@@ -19,7 +19,27 @@
     "smoke:armory": "node --import tsx scripts/armory-smoke.ts",
     "test:demo": "node --import tsx tests/demo.ts",
     "test:helper": "node tests/helper.mjs",
-    "test:demo:browser": "node --import tsx tests/demo-browser.ts"
+    "test:demo:browser": "node --import tsx tests/demo-browser.ts",
+    "test:database": "node --import tsx tests/database.ts",
+    "test:ingress": "node --import tsx tests/ingress.ts",
+    "test:discord": "node --import tsx tests/discord.ts",
+    "worker:health": "node dist/worker-health.js",
+    "build:landing": "node scripts/build-landing.mjs",
+    "test:landing": "node tests/landing.mjs",
+    "coverage:backend": "c8 --all --include=\"src/**/*.ts\" --temp-directory=coverage/raw/backend --reporter=text --reporter=json-summary --reporter=html --reports-dir=coverage/backend node scripts/test-backend.mjs",
+    "test:public": "node tests/public.mjs",
+    "test:public:container": "node tests/public-container.mjs",
+    "test:landing:browser": "node tests/landing-browser.mjs",
+    "test:discord:integration": "node --import tsx tests/discord-integration.ts",
+    "test:worker": "node --import tsx tests/discord-integration.ts",
+    "coverage:utilities": "node scripts/utility-coverage.mjs",
+    "coverage:frontend": "node scripts/browser-coverage.mjs",
+    "coverage:check": "node scripts/check-coverage.mjs",
+    "test:recovery": "node --import tsx tests/recovery.ts",
+    "test:runtime-role": "node --import tsx tests/runtime-role.ts",
+    "typecheck": "tsc -p tsconfig.tests.json",
+    "test:two-host": "node --import tsx tests/two-host.ts",
+    "test:recovery:container": "node tests/recovery-container.mjs"
   },
   "dependencies": {
     "argon2": "^0.44.0",
@@ -30,14 +50,19 @@
     "pg": "^8.16.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.56.1",
     "@types/connect-pg-simple": "^7.0.3",
     "@types/express": "^5.0.5",
     "@types/express-session": "^1.18.2",
     "@types/node": "^24.10.0",
     "@types/pg": "^8.15.6",
-    "typescript": "^5.9.3",
-    "tsx": "^4.20.6",
+    "c8": "^12.0.0",
     "embedded-postgres": "18.6.0-beta.19",
-    "@playwright/test": "^1.56.1"
+    "istanbul-lib-coverage": "^3.2.2",
+    "istanbul-lib-report": "^3.0.1",
+    "istanbul-reports": "^3.2.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "v8-to-istanbul": "^9.3.0"
   }
 }

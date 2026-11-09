@@ -1,0 +1,43 @@
+import assert from 'node:assert/strict';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { createApp } from '../src/app.js';
+import { createPool } from '../src/db.js';
+import { cleanupTick, tick } from '../src/worker.js';
+import { harness, Client, listen, close } from './harness.js';
+const h = await harness();
+const password = randomBytes(24).toString('hex');
+const runtimeUrl = new URL(h.cfg.databaseUrl);
+runtimeUrl.username = 'mytikas_runtime'; runtimeUrl.password = password;
+const pool = createPool(runtimeUrl.toString());
+const cfg = {...h.cfg};
+const server = createServer(createApp(pool,cfg,h.verify));
+try {
+  await h.pool.query(`CREATE ROLE mytikas_runtime LOGIN PASSWORD '${password}' NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT`);
+  const grants = (await readFile('scripts/runtime-grants.sql','utf8')).replaceAll(':"runtime_role"','"mytikas_runtime"').replaceAll(':"database"','"mytikas_test"');
+  await h.pool.query(grants);
+  cfg.origin = `http://127.0.0.1:${await listen(server)}`;
+  const ownership = await pool.query("SELECT count(*)::int AS count FROM pg_tables WHERE schemaname='public' AND tableowner=current_user");
+  assert.equal(ownership.rows[0].count,0);
+  for(const query of ['CREATE TABLE forbidden(id int)','ALTER TABLE users ADD COLUMN forbidden int','UPDATE migrations SET checksum=checksum','TRUNCATE events','DELETE FROM rules'])
+    await assert.rejects(pool.query(query), e => (e as {code:string}).code==='42501');
+  assert.equal((await fetch(cfg.origin+'/api/health')).status,200);
+  const user = new Client(cfg.origin), admin = new Client(cfg.origin);
+  assert.equal((await user.signup('Runtime Applicant')).status,201);
+  await admin.login();
+  const id = (await user.application()).application.id;
+  assert.equal((await admin.request(`/api/admin/applications/${id}/approve`,{note:'Runtime role review'})).status,200);
+  assert.equal((await admin.request('/api/admin/rules',{content:'Runtime role published rules.'})).status,201);
+  await tick(pool,cfg.discordWebhook,cfg.origin,h.verify);
+  assert.equal((await user.application()).application.status,'JOINED');
+  assert.equal(h.discord.messages.length,1);
+  assert.equal((await user.request('/api/auth/logout',{})).status,200);
+  await user.login('runtime.applicant@example.test');
+  await cleanupTick(pool);
+  const heartbeat=randomUUID();
+  await pool.query('INSERT INTO worker_heartbeats(id) VALUES($1)',[heartbeat]);
+  await pool.query('UPDATE worker_heartbeats SET updated_at=now() WHERE id=$1',[heartbeat]);
+  await pool.query('DELETE FROM worker_heartbeats WHERE id=$1',[heartbeat]);
+  console.log('Non-owner runtime grants support auth, application/staff workflow, rules, workers, sessions and readiness; DDL/history/migration mutation denied.');
+} finally { if(server.listening)await close(server); await pool.end(); await h.stop(); }

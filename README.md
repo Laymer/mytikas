@@ -286,3 +286,13 @@ Verified with Node 24, Docker Engine 29.8.2, Compose 5.6.0 and real PostgreSQL 1
 
 ShellCheck was unavailable in this environment. Integration and browser tests use
 isolated fixture transports; live Blizzard/Discord integration was not exercised.
+
+## Public prototype deployment
+
+The intended public landing URL is **https://mytikas.monster**, with accounts and staff pages at **https://app.mytikas.monster**. The domain cutover and external showcase acceptance are still pending; the existing landing remains in place.
+
+The public deployment uses an isolated database and Cloudflare Tunnel, with no app/database host ports. Start setup with `node scripts/public.mjs init`, then follow [public laptop operations](docs/PUBLIC-OPERATIONS.md), [DNS cutover](docs/CUTOVER.md), and [backup/recovery](docs/RECOVERY.md). Normal local and seeded demo commands remain available. Password reset and email verification are not implemented. Registration/application details are sent to the private staff Discord channel; email, passwords and session information are excluded.
+
+The [implementation tracker](docs/IMPLEMENTATION-PLAN.md) distinguishes verified implementation from outstanding live work. [Architecture contracts](docs/ARCHITECTURE.md) and the [cloud handoff](docs/CLOUD-HANDOFF.md) describe portable web/worker/migration entrypoints, external PostgreSQL TLS and runtime privileges. CI gates changes with `ci-required`; Pages and image publication run only after required jobs succeed on main.
+
+Run `npm run typecheck`, `npm run coverage:backend`, and `npm run coverage:utilities` for backend/tool checks. Browser compatibility uses `BROWSER=chromium|firefox|webkit npm run test:browser`; Chromium collects coverage with `FRONTEND_COVERAGE=1`, followed by the same setting for `npm run test:landing:browser`, then `npm run coverage:frontend`. `npm run coverage:check` validates the measured baseline. See the coverage report documentation for exclusions and remaining gaps.

@@ -181,3 +181,9 @@ The script captures the actual website using Playwright and checks the expected
 states. It signs in to fictional demo accounts and fills an unsaved staff note;
 it does not submit changes. Screenshots contain no passwords. If a walkthrough
 has changed the examples, reset the demo before regenerating screenshots.
+
+## Public prototype differences
+
+The public landing stays at `https://mytikas.monster`; account and staff pages use `https://app.mytikas.monster` once cutover is completed. Availability depends on the laptop, Docker/WSL and tunnel being running. The landing remains readable during an outage and offers a status retry. Public deployment is not yet externally accepted; consult the implementation tracker before sharing it.
+
+Registration sends the character name, motivation, accepted rules version, revision reference and review link to private staff Discord. It does not send email, passwords or sessions. Password recovery is unavailable. Discord review links preserve their application destination through staff login. If a submission response is lost, the page checks authoritative state; if the outcome remains uncertain it preserves your text and disables another attempt until you sign in/reload to confirm. It does not automatically repeat a submission.

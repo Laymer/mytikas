@@ -8,6 +8,7 @@ import {
   action,
   rulesView,
   applicationView,
+  reviewDestination,
 } from "./common.js";
 let user,
   offset = 0,
@@ -21,7 +22,8 @@ async function render() {
       node("p", "Sign in with a staff account to open the admin panel."),
     );
     const a = node("a", "Go to your account", "button");
-    a.href = "/account.html";
+    const destination = reviewDestination(location.pathname + location.hash);
+    a.href = "/account.html" + (destination ? `?returnTo=${encodeURIComponent(destination)}` : "");
     root.append(a);
     return;
   }
