@@ -1,6 +1,6 @@
 x-backend: &backend
   build: .
-  image: mytikas-public
+  image: ${MYTIKAS_IMAGE:-mytikas-public}
   init: true
   environment: &environment
     NODE_ENV: production

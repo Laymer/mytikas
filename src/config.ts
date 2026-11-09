@@ -87,6 +87,8 @@ export function config(): Config {
         "Use an official https://discord.com/api/webhooks/id/token URL.",
       );
   }
+  if (Boolean(process.env.SMTP_USER) !== Boolean(process.env.SMTP_PASSWORD))
+    throw new Error("SMTP_USER and SMTP_PASSWORD must be configured together.");
   const emailOutboxKey = process.env.EMAIL_OUTBOX_KEY;
   const smtpPort = Number(process.env.SMTP_PORT || 587);
   if (!Number.isInteger(smtpPort) || smtpPort < 1 || smtpPort > 65535)

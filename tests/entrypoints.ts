@@ -81,6 +81,23 @@ async function serverProcess() {
   return { ...process, port, origin };
 }
 try {
+  for (const [mode, extra, expected] of [
+    ['config', {}, 0], ['schema', {}, 0], ['invalid', {}, 1],
+    ['config', {SMTP_USER:'fixture',SMTP_PASSWORD:''}, 1],
+    ['smtp', {SMTP_HOST:'127.0.0.1',SMTP_PORT:'1'}, 1],
+  ] as const) {
+    const check=monitored(process.execPath,['--import','tsx','src/deployment-preflight.ts',mode],extra);
+    assert.equal((await bounded(check.exited,'candidate preflight'))[0],expected);
+    assert(!check.output().includes(h.cfg.databaseUrl));
+    if(mode==='smtp')assert.match(check.output(),/SMTP preflight failed: connection/);
+  }
+  await h.pool.query("UPDATE migrations SET checksum='mismatch' WHERE name=(SELECT min(name) FROM migrations)");
+  const mismatch=monitored(process.execPath,['--import','tsx','src/deployment-preflight.ts','schema']);
+  assert.equal((await bounded(mismatch.exited,'schema refusal'))[0],1);
+  await h.pool.query("UPDATE migrations SET checksum=NULL WHERE checksum='mismatch'");
+  // Restore the fixture schema checksum using the deliberately gated legacy adoption.
+  const adoption=monitored(process.execPath,['--import','tsx','src/migrate.ts'],{ADOPT_MIGRATION_CHECKSUMS:'1'});
+  assert.equal((await bounded(adoption.exited,'fixture checksum restoration'))[0],0);
   const nonTty = monitored(process.execPath, ['--import', 'tsx', 'src/admin-cli.ts']);
   assert.equal((await bounded(nonTty.exited, 'noninteractive admin refusal'))[0], 1);
   assert.ok(nonTty.output().includes('Run this interactive command in a terminal'));

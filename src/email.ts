@@ -188,7 +188,11 @@ export function captureTransport() {
 }
 export function smtpSender(cfg: Config): SendMail {
   if (cfg.demo) return captureTransport().send; // Isolated demo capture: never connect to SMTP.
-  const transport = nodemailer.createTransport({
+  const transport = smtpTransport(cfg);
+  return (mail) => transport.sendMail({ ...mail, from: cfg.emailFrom });
+}
+export function smtpTransport(cfg: Config) {
+  return nodemailer.createTransport({
     host: cfg.smtpHost,
     port: cfg.smtpPort || 587,
     secure: cfg.smtpPort === 465,
@@ -205,7 +209,16 @@ export function smtpSender(cfg: Config): SendMail {
     disableFileAccess: true,
     disableUrlAccess: true,
   });
-  return (mail) => transport.sendMail({ ...mail, from: cfg.emailFrom });
+}
+export function mailFailureCategory(error: unknown): string {
+  const e = error as { code?: string; responseCode?: number };
+  if (e?.code === "EAUTH") return "authentication";
+  if (["ETLS", "CERT_HAS_EXPIRED", "DEPTH_ZERO_SELF_SIGNED_CERT", "ERR_TLS_CERT_ALTNAME_INVALID", "UNABLE_TO_VERIFY_LEAF_SIGNATURE"].includes(e?.code || "")) return "tls";
+  if (e?.code === "ETIMEDOUT") return "timeout";
+  if (["ECONNECTION", "ECONNREFUSED", "EDNS", "ENOTFOUND", "ESOCKET"].includes(e?.code || "")) return "connection";
+  if (e?.responseCode && e.responseCode >= 500 && e.responseCode < 600) return "smtp_permanent";
+  if (e?.responseCode && e.responseCode >= 400 && e.responseCode < 500) return "smtp_temporary";
+  return "internal";
 }
 export async function emailTick(pool: Pool, cfg: Config, send: SendMail) {
   await pool.query(
@@ -219,9 +232,12 @@ export async function emailTick(pool: Pool, cfg: Config, send: SendMail) {
     [lease],
   );
   if (!job) return false;
+  let category = "payload";
   try {
     if (!cfg.emailOutboxKey) throw new Error("MAIL_CONFIG");
-    await send(unseal(job.payload, cfg.emailOutboxKey));
+    const mail = unseal(job.payload, cfg.emailOutboxKey);
+    category = "transport";
+    await send(mail);
     await pool.query(
       `UPDATE email_jobs SET status='DELIVERED',payload=NULL,lease_token=NULL,lease_until=NULL WHERE id=$1 AND lease_token=$2`,
       [job.id, lease],
@@ -234,6 +250,7 @@ export async function emailTick(pool: Pool, cfg: Config, send: SendMail) {
       `UPDATE email_jobs SET status=CASE WHEN $3 THEN 'FAILED' ELSE 'PENDING' END,payload=CASE WHEN $3 THEN NULL ELSE payload END,lease_token=NULL,lease_until=NULL,available_at=now()+($4*interval '1 second') WHERE id=$1 AND lease_token=$2`,
       [job.id, lease, terminal, Math.min(3600, 30 * 2 ** job.attempts)],
     );
+    console.error(JSON.stringify({ event: "mail_failure", jobId: job.id, attempt: job.attempts, outcome: terminal ? "terminal" : "retry", category: category === "payload" ? "payload" : mailFailureCategory(error) }));
   }
   return true;
 }
