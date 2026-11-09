@@ -142,6 +142,6 @@ try {
     cleanup.push(once(child, 'exit'));
     try { process.kill(-child.pid!, 'SIGKILL'); } catch { child.kill('SIGKILL'); }
   }
-  await bounded(Promise.allSettled(cleanup), 'entrypoint child cleanup', 5000);
-  await h.stop();
+  try { await bounded(Promise.allSettled(cleanup), 'entrypoint child cleanup', 5000); }
+  finally { await h.stop(); }
 }
