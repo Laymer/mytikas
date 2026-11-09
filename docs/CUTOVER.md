@@ -32,7 +32,7 @@ From a separate network with no VPN, record date/time, device/browser, source co
 
 Stop the laptop service: Pages must still load and show unavailable/unknown service status. Restart and verify sessions, accounts/history persist. Rebuild with the helper and verify tunnel recovery and local/demo isolation. Run a private backup and restore drill. Redact screenshots/logs before saving evidence. Only then tag the accepted prototype and record the Pages artifact, immutable container digest and migration set in the tracker.
 
-Cloudflare's current [dashboard tunnel guide](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/) uses **Networking → Tunnels**. After adding/verifying the zone, create a remotely managed tunnel and configure its published application route as above. Use the token-file mechanism already provided by Compose rather than copying the token-bearing installation command into shell history. The user confirmed on 2026-11-09 that Cloudflare/tunnel setup has not yet been configured.
+Cloudflare's current [dashboard tunnel guide](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/get-started/create-remote-tunnel/) uses **Networking → Tunnels**. After adding/verifying the zone, create a remotely managed tunnel and configure its published application route as above. Use the token-file mechanism already provided by Compose rather than copying the token-bearing installation command into shell history. During initial planning on 2026-11-09, Cloudflare/tunnel setup was not configured; the later execution record below supersedes that state.
 
 ## Executed Cloudflare preparation — 2026-11-09
 
