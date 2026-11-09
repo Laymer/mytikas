@@ -4,6 +4,24 @@ import { migrate } from '../src/migrate.js';
 import { createPool } from '../src/db.js';
 const h = await harness();
 try {
+  const victim = createPool(h.cfg.databaseUrl);
+  try {
+    const pid = (await victim.query("SELECT pg_backend_pid() AS pid")).rows[0].pid;
+    const logs: unknown[][] = [];
+    const originalError = console.error;
+    let deadline: NodeJS.Timeout | undefined;
+    console.error = (...values) => { logs.push(values); };
+    try {
+      const lost = new Promise<void>((resolve, reject) => {
+        victim.once("error", () => resolve());
+        deadline = setTimeout(() => reject(new Error("Idle failure event missing")), 5000);
+      });
+      await h.pool.query("SELECT pg_terminate_backend($1)", [pid]);
+      await lost;
+      assert.deepEqual(logs, [[JSON.stringify({ event: "database_idle_connection_lost" })]]);
+    } finally { console.error = originalError; clearTimeout(deadline); }
+    assert.equal((await victim.query("SELECT 1 AS recovered")).rows[0].recovered, 1);
+  } finally { await victim.end(); }
   const client = new Client(h.cfg.origin);
   assert.equal((await client.signup('Database Summit')).status, 201);
   const before = await client.application();
