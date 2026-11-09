@@ -194,3 +194,6 @@ The user confirmed Cloudflare and tunnel setup is not configured. Private `.env.
 Post-merge publication correctly stopped when the main run exposed an idle PostgreSQL connection error during restart/teardown. A follow-up handles idle-pool failures with a redacted event instead of an unhandled exception and tests actual backend termination/reconnection. No failed-commit image or Pages artifact was published.
 
 Published implementation artifacts, exact digest, pull/run smoke, current coverage and remaining live blockers are recorded in [VERIFICATION.md](VERIFICATION.md). This does not complete P16 or authorize an accepted-release tag before its evidence exists.
+
+
+Additional offline verification adds `tests/database-tls.ts` (real verified TLS, wrong CA/hostname), `tests/worker-races.ts` (overlapping claims, expired leases and SIGKILL/retry), and `tests/visual.ts` (original-design desktop/mobile pixel comparison plus keyboard/error behavior). CI now includes a pinned scanner/SBOM job against the tested image archive and blocks fixable HIGH/CRITICAL findings. Unfixed base-image findings remain visible for live-launch review; see IMAGE-SECURITY.md. These changes do not supply missing Cloudflare/Discord account setup or external acceptance evidence.

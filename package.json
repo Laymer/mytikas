@@ -39,7 +39,10 @@
     "test:runtime-role": "node --import tsx tests/runtime-role.ts",
     "typecheck": "tsc -p tsconfig.tests.json",
     "test:two-host": "node --import tsx tests/two-host.ts",
-    "test:recovery:container": "node tests/recovery-container.mjs"
+    "test:recovery:container": "node tests/recovery-container.mjs",
+    "test:database:tls": "node --import tsx tests/database-tls.ts",
+    "test:worker:races": "node --import tsx tests/worker-races.ts",
+    "test:visual": "node --import tsx tests/visual.ts"
   },
   "dependencies": {
     "argon2": "^0.44.0",

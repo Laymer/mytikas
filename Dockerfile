@@ -9,6 +9,10 @@ RUN npm prune --omit=dev
 
 FROM node:24-bookworm-slim
 ENV NODE_ENV=production
+# Runtime entrypoints use node directly; package managers belong only in build.
+RUN rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx \
+    /opt/yarn-* /usr/local/bin/yarn /usr/local/bin/yarnpkg
+LABEL org.opencontainers.image.source="https://github.com/Laymer/mytikas"
 WORKDIR /app
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
