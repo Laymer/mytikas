@@ -17,11 +17,12 @@ import fs from 'node:fs';
 const raw=process.argv.slice(2),a=[...raw];if(a[0]==='--context')a.splice(0,2);
 fs.appendFileSync(process.env.RECORD,JSON.stringify({args:raw,override:process.env.POSTGRES_PASSWORD,runtimeOverride:process.env.RUNTIME_DATABASE_PASSWORD,mailOverride:process.env.SMTP_PASSWORD})+'\\n');
 if(a.includes('config')&&a.includes('json'))process.stdout.write(fs.readFileSync(process.env.HOME+'/fixture.json'));
+if(a[0]==='run')process.stdout.write(JSON.stringify({activation:!process.env.LEGACY,preflight:!process.env.LEGACY}));
 if(a[0]==='image')process.stdout.write('[{"Os":"linux","Architecture":"amd64"}]');
-if(a[0]==='volume'&&process.env.EXISTING)process.stdout.write('{"Name":"fixture-data"}');
-if(a.includes('ps')&&a.includes('-q')&&a.includes('db')&&process.env.EXISTING)process.stdout.write('abc');
+if(a[0]==='volume'&&process.env.EXISTING&&!process.env.NO_VOLUME)process.stdout.write('{"Name":"fixture-data"}');
+if(a.includes('ps')&&a.includes('-q')&&a.includes('db')&&process.env.EXISTING&&!process.env.REMOVED)process.stdout.write('abc');
 if(a.includes('ps')&&a.includes('-q')&&process.env.WRITERS&&!a.includes('db'))process.stdout.write(a.at(-1));
-if(a[0]==='inspect')process.stdout.write(JSON.stringify([{Image:process.env.BAD_WRITER&&a[1]==='worker'?'different':'same',Config:{Env:['SMTP_PASSWORD=fixture']}}]));
+if(a[0]==='inspect')process.stdout.write(JSON.stringify([{State:{Running:!process.env.STOPPED},Mounts:[{Type:'volume',Name:'fixture-data',Destination:'/var/lib/postgresql'}],Image:process.env.BAD_WRITER&&a[1]==='worker'?'different':'same',Config:{Env:['SMTP_PASSWORD=fixture']}}]));
 if(a.includes('schema')&&process.env.PENDING)process.exitCode=1;
 if(a.includes('pg_dump')){process.stdout.write('fixture-backup');if(process.env.FAIL_BACKUP)process.exitCode=1;}
 `,{mode:0o700});
@@ -90,6 +91,13 @@ if(a.includes('pg_dump')){process.stdout.write('fixture-backup');if(process.env.
   delete env.BAD_WRITER;
   assert.equal(run('doctor','--smtp').status,0);
   delete env.WRITERS;
+  for(const flag of ['STOPPED','REMOVED']) {
+    env[flag]='1';writeFileSync(record,'');assert.equal(run('up').status,0);delete env[flag];
+    const restart=readFileSync(record,'utf8').trim().split('\n').map(JSON.parse);
+    const db=restart.findIndex(c=>c.args.includes('--no-recreate'));
+    assert(db>=0&&db<restart.findIndex(c=>c.args.includes('schema')));
+    assert(restart[db].args.includes('--no-deps'));
+  }
   const stateFile=join(root,'.mytikas/machine.json');
   const managed={root,project:'mytikas-gen-fixture',env:join(root,'.env.public'),token:join(root,'.public/tunnel-token'),compose:join(root,'compose.json')};
   writeFileSync(managed.compose,'{}',{mode:0o600});
@@ -102,6 +110,12 @@ if(a.includes('pg_dump')){process.stdout.write('fixture-backup');if(process.env.
   const managedCalls=readFileSync(record,'utf8').trim().split('\n').map(JSON.parse);
   assert(!managedCalls.some(c=>c.args.includes('build')));
   assert(managedCalls.some(c=>c.args.includes('fixture-context')&&c.args.includes(managed.project)&&c.args.includes('--no-deps')));
+  env.LEGACY='1';fixture.services.app.environment.EMAIL_OUTBOX_KEY='';persist();writeFileSync(record,'');
+  assert.equal(run('up').status,0);assert.equal(run('doctor').status,0);
+  assert.match(run('doctor','--smtp').stderr,/current candidate/);
+  assert(readFileSync(record,'utf8').includes('--input-type=module'));
+  delete env.LEGACY;fixture.services.app.environment.EMAIL_OUTBOX_KEY=key;persist();
+  env.NO_VOLUME='1';assert.match(run('up').stderr,/volume is unavailable/);delete env.NO_VOLUME;
   writeFileSync(stateFile,JSON.stringify({phase:'import-restoring',active:managed}));
   assert.equal(run('up').status,1);
   assert.equal(run('status').status,0);

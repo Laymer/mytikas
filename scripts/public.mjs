@@ -83,19 +83,29 @@ try {
     for (const name of ['worker', ...(managed ? [] : ['migrate'])])
       if (services[name].image !== selected) throw new Error('Candidate service images differ.');
     if (JSON.stringify(services.app.environment) !== JSON.stringify(services.worker.environment)) throw new Error('Candidate web/worker environments differ.');
-    const mail = services.app.environment;
-    for (const key of ['EMAIL_OUTBOX_KEY','SMTP_HOST','EMAIL_FROM'])
-      if (!mail[key]) throw new Error(`Missing ${key}; configure privately before rollout. Existing outbox keys must be recovered, never replaced automatically.`);
-    if (!/^[a-f0-9]{64}$/i.test(mail.EMAIL_OUTBOX_KEY) || [mail.SESSION_SECRET,services.db.environment.POSTGRES_PASSWORD,new URL(mail.DATABASE_URL).password].includes(mail.EMAIL_OUTBOX_KEY))
-      throw new Error('EMAIL_OUTBOX_KEY must be an independent 32-byte hexadecimal key.');
-    if (Boolean(mail.SMTP_USER) !== Boolean(mail.SMTP_PASSWORD)) throw new Error('SMTP_USER and SMTP_PASSWORD must be paired.');
     if (!managed) {
       if (selected === 'mytikas-public') run([...dc,'build','app']);
       else run([...dc,'pull','app','worker','migrate'],{stdio:'pipe'});
     }
     const candidate = JSON.parse(run(['image','inspect',selected],{stdio:'pipe',encoding:'utf8'}).stdout)[0];
     if (candidate.Os !== 'linux' || candidate.Architecture !== 'amd64') throw new Error('Candidate requires linux/amd64.');
-    run([...dc,'run','--rm','--no-deps','app','node','dist/deployment-preflight.js',args[0] === '--smtp' ? 'smtp' : 'config'],{stdio:'pipe'});
+    const capabilities = JSON.parse(run(['run','--rm','--network','none','--entrypoint','node',selected,'-e',"const fs=require('node:fs'); console.log(JSON.stringify({activation:fs.readdirSync('/app/migrations').some(n=>n.startsWith('004_')),preflight:fs.existsSync('/app/dist/deployment-preflight.js')}))"],{stdio:'pipe',encoding:'utf8'}).stdout);
+    if (!managed || capabilities.activation) {
+    const mail = services.app.environment;
+    for (const key of ['EMAIL_OUTBOX_KEY','SMTP_HOST','EMAIL_FROM'])
+      if (!mail[key]) throw new Error(`Missing ${key}; configure privately before rollout. Existing outbox keys must be recovered, never replaced automatically.`);
+    if (!/^[a-f0-9]{64}$/i.test(mail.EMAIL_OUTBOX_KEY) || [mail.SESSION_SECRET,services.db.environment.POSTGRES_PASSWORD,new URL(mail.DATABASE_URL).password].includes(mail.EMAIL_OUTBOX_KEY))
+      throw new Error('EMAIL_OUTBOX_KEY must be an independent 32-byte hexadecimal key.');
+    if (Boolean(mail.SMTP_USER) !== Boolean(mail.SMTP_PASSWORD)) throw new Error('SMTP_USER and SMTP_PASSWORD must be paired.');
+    }
+    function candidateCheck(mode) {
+      if (capabilities.preflight) return run([...dc,'run','--rm','--no-deps','app','node','dist/deployment-preflight.js',mode],{stdio:'pipe'});
+      if (mode === 'smtp') throw new Error('SMTP preflight requires a current candidate; legacy managed archives remain restartable.');
+      // Existing exports are present in preserved pre-004 images; this never migrates.
+      const probe = `try { const {config}=await import('./dist/config.js'); const cfg=config(); ${mode === 'schema' ? "const {createPool}=await import('./dist/db.js'); const {schemaReady}=await import('./dist/migrate.js'); const pool=createPool(cfg.databaseUrl); try { if(!await schemaReady(pool))throw new Error(); } finally {await pool.end();}" : ''} } catch { process.exitCode=1; }`;
+      return run([...dc,'run','--rm','--no-deps','app','node','--input-type=module','-e',probe],{stdio:'pipe'});
+    }
+    candidateCheck(args[0] === '--smtp' ? 'smtp' : 'config');
     const mounts = services.db.volumes.filter(v=>v.type==='volume' && v.target==='/var/lib/postgresql');
     if (mounts.length !== 1) throw new Error('Expected one named PostgreSQL volume.');
     const volume = resolved.volumes[mounts[0].source].name;
@@ -112,8 +122,14 @@ try {
         for (const key of ['DATABASE_URL','SESSION_SECRET','EMAIL_OUTBOX_KEY','SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASSWORD','EMAIL_FROM'])
           if (values[0][key] !== values[1][key]) throw new Error('Running web/worker configuration differs.');
       }
-      if (!dbId) throw new Error('Existing database must be started explicitly without writers before preflight. See docs/PRODUCTION-ROLLOUT.md.');
-      try { run([...dc,'run','--rm','--no-deps','app','node','dist/deployment-preflight.js','schema'],{stdio:'pipe'}); }
+      const database = dbId ? JSON.parse(run(['inspect',dbId],{stdio:'pipe',encoding:'utf8'}).stdout)[0] : null;
+      if (database && !database.Mounts?.some(m=>m.Type==='volume' && m.Name===volume && m.Destination==='/var/lib/postgresql'))
+        throw new Error('Database container does not use the selected retained volume.');
+      if (!database?.State.Running) {
+        if (command === 'doctor') throw new Error('Database is stopped; use up to restart only the retained database before schema validation.');
+        run([...dc,'up','-d','--no-deps','--no-recreate','--wait','--wait-timeout','180','db']);
+      }
+      try { candidateCheck('schema'); }
       catch {
         if (command === 'up') throw new Error('Existing schema is unavailable, pending or mismatched. Refusing interruption; use docs/PRODUCTION-ROLLOUT.md.');
         console.log('Schema is unavailable, pending or mismatched: ordinary up is blocked. Follow docs/PRODUCTION-ROLLOUT.md before interruption.');
@@ -125,7 +141,6 @@ try {
     case 'up':
       // All candidate and schema checks complete before interrupting ingress.
       run([...dc, 'rm', '--stop', '--force', 'tunnel']);
-      if (managed) run([...dc, 'up', '-d', '--no-deps', '--wait', '--wait-timeout', '180', 'db']);
       run([...dc, 'up', '-d', '--no-build', ...(managed || existing ? ['--no-deps'] : []), '--wait', '--wait-timeout', '180', 'app', 'worker']);
       run([...dc, 'up', '-d', '--no-deps', '--force-recreate', 'tunnel']);
       break;
