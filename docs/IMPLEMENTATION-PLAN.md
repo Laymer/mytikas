@@ -138,14 +138,14 @@ The empty remote permits one audited bootstrap publication. Subsequent feature c
 | P14.7 — Operational signals | ✅ Done | [Merged PR #2](https://github.com/Laymer/mytikas/pull/2); [passing complete CI](https://github.com/Laymer/mytikas/actions/runs/42594323149); scope/limitations below |
 | **P15 — Live cutover** | 🚧 In progress | |
 | P15.1 — Export current DNS and Pages | 🚧 In progress | Public DNS/Pages inventory recorded; complete private zone export pending |
-| P15.2 — Cloudflare zone onboarding | ⬜ To do | |
-| P15.3 — DNSSEC and nameservers | ⬜ To do | |
-| P15.4 — DNS-only Pages and named app tunnel | ⬜ To do | |
+| P15.2 — Cloudflare zone onboarding | ✅ Done | Live API/DNS/HTTPS verification on 2026-11-09; see timestamped CUTOVER.md execution record |
+| P15.3 — DNSSEC and nameservers | ✅ Done | Live API/DNS/HTTPS verification on 2026-11-09; see timestamped CUTOVER.md execution record |
+| P15.4 — DNS-only Pages and named app tunnel | ✅ Done | Live API/DNS/HTTPS verification on 2026-11-09; see timestamped CUTOVER.md execution record |
 | P15.5 — Public admin and reviewed rules | ⬜ To do | |
 | P15.6 — Private Discord webhook delivery | ⬜ To do | |
 | P15.7 — Validate new Pages before detach | ✅ Done | [Published-artifact evidence](VERIFICATION.md); custom-domain cutover remains pending |
-| P15.8 — Custom-domain transfer and HTTPS | ⬜ To do | |
-| P15.9 — TLS DNS cache anonymous access | ⬜ To do | |
+| P15.8 — Custom-domain transfer and HTTPS | ✅ Done | Live API/DNS/HTTPS verification on 2026-11-09; see timestamped CUTOVER.md execution record |
+| P15.9 — TLS DNS cache anonymous access | ✅ Done | Live API/DNS/HTTPS verification on 2026-11-09; see timestamped CUTOVER.md execution record |
 | P15.10 — Test cutover rollback | ⬜ To do | |
 | P15.11 — Old repository notice and workflow retirement | ⬜ To do | |
 | **P16 — External acceptance** | ⬜ To do | |
@@ -201,3 +201,9 @@ Additional offline verification adds `tests/database-tls.ts` (real verified TLS,
 Latest follow-up: public runtime privilege separation, exact shared container image checks, real CLI/shutdown tests, and published-image cloud upgrade/rollback rehearsal passed locally. Independent review completed; PR #6 merged as `08ba63d9170811f724926815a8033cdf2e690134` after required CI run 42601083300 passed. Live P15/P16 acceptance remains pending.
 
 Cloudflare automation follow-up: `scripts/cloudflare.mjs` prepares the zone, dedicated remote tunnel, private token and application CNAME after scoped API authorization. Its read-only plan, conflict checks, interruption recovery, DNS preservation, redacted errors and private file handling have fixture tests. Registrar delegation still requires complete DNS inventory and DNSSEC review; live setup status is separate from code verification. See [automation instructions](CLOUDFLARE-AUTOMATION.md).
+
+Cloudflare resources were prepared live on 2026-11-09 using the merged automation in PR #8. The public stack is healthy and the connector has four live connections. Imported Pages proxy settings and the missing ownership TXT were corrected, preserving other records. The user confirmed the complete known record inventory and that domain email is unused. Registrar delegation and public HTTPS acceptance are still pending; see the execution record in CUTOVER.md. No accepted release is claimed.
+
+The user subsequently changed Namecheap nameservers. At 11:15 UTC, parent delegation and both Cloudflare authoritative servers were verified, with all known website/mail/verification records preserved. Zone is active; Universal SSL is enabled but initial certificate issuance and some resolver caches still prevent public HTTPS acceptance. Registrar delegation is no longer pending; TLS and the remaining P15/P16 checks are. See CUTOVER.md for timestamped evidence and limits.
+
+Cloudflare HTTPS subsequently passed, and the Pages custom-domain binding moved to `mytikas` with HTTPS enforcement and apex/www redirects verified. Live Chromium navigation succeeded. This completes the technical Cloudflare/domain cutover, not P16 account/staff/Discord/Armory acceptance; administrator, reviewed rules and webhook remain pending.
