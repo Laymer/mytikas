@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile, rm, mkdir, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -24,5 +24,49 @@ try {
   assert.equal(run([join(directory, 'missing')]).status, 1);
   assert.equal(run([archive, '--replace', '--replace']).status, 1);
   assert.ok(!run([archive]).stderr.includes('secret'));
-  console.log('Restore argument, archive and destructive-target guards passed.');
+  const home = join(directory, 'home');
+  await mkdir(join(home,'.mytikas'),{recursive:true});
+  await writeFile(join(home,'.mytikas/machine.json'),JSON.stringify({phase:'handed-off'}));
+  const publicRun = () => spawnSync(process.execPath,['scripts/restore.mjs',archive,'--public'],{encoding:'utf8',env:{...process.env,HOME:home}});
+  assert.match(publicRun().stderr,/blocked during or after handoff/);
+  await assert.rejects(access(join(home,'.mytikas/operation.lock')));
+  await mkdir(join(home,'.mytikas/operation.lock'));
+  assert.match(publicRun().stderr,/operation in progress/);
+  await rm(join(home,'.mytikas/operation.lock'),{recursive:true});
+  const bin = join(directory,'bin'), record = join(directory,'docker-calls');
+  await mkdir(bin);
+  await writeFile(join(bin,'docker'), '#!/bin/sh\nexec "$FIXTURE_NODE" -- "$FIXTURE_DOCKER_SOURCE" "$@"\n',{mode:0o700});
+  await writeFile(join(bin,'docker.cjs'), `const fs=require('node:fs'), args=process.argv.slice(2);
+fs.appendFileSync(process.env.RECORD,JSON.stringify({args,host:process.env.DOCKER_HOST,context:process.env.DOCKER_CONTEXT,password:process.env.POSTGRES_PASSWORD})+'\\n');
+if(process.env.FAIL_RESTORE==='1')process.exit(2);
+if(args.some(a=>a.startsWith('SELECT 1 FROM pg_database'))&&process.env.EXISTING_DATABASE==='1')process.stdout.write('1');
+`,{mode:0o700});
+  const managed={project:'mytikas-gen-fixture',env:join(home,'managed.env'),compose:join(home,'managed-compose.json')};
+  await writeFile(managed.env,'');await writeFile(managed.compose,'{}');
+  const stateFile=join(home,'.mytikas/machine.json');
+  await writeFile(stateFile,JSON.stringify({phase:'active',context:'fixture-context',active:managed}));
+  const restoreEnv={...process.env,HOME:home,PATH:bin+':'+process.env.PATH,RECORD:record,FIXTURE_NODE:process.execPath,FIXTURE_DOCKER_SOURCE:join(bin,'docker.cjs'),DOCKER_HOST:'tcp://unwanted:2375',DOCKER_CONTEXT:'unwanted',POSTGRES_PASSWORD:'ambient-fixture'};
+  const managedRun=(args=[],overrides={})=>spawnSync(process.execPath,['scripts/restore.mjs',archive,'--public','--database','restore_fixture',...args],{encoding:'utf8',env:{...restoreEnv,...overrides}});
+  const restored=managedRun();assert.equal(restored.status,0,restored.stderr);
+  const calls=(await readFile(record,'utf8')).trim().split('\n').map(JSON.parse);
+  for(const call of calls) {
+    assert.deepEqual(call.args.slice(0,4),['--context','fixture-context','compose','--project-name']);
+    assert(call.args.includes(managed.project));assert(call.args.includes(managed.env));assert(call.args.includes(managed.compose));
+    assert.equal(call.host,undefined);assert.equal(call.context,undefined);assert.equal(call.password,undefined);
+  }
+  assert(calls.some(c=>c.args.includes('--single-transaction')&&c.args.includes('--exit-on-error')));
+  await assert.rejects(access(join(home,'.mytikas/operation.lock')));
+  await writeFile(record,'');
+  const exists=managedRun([],{EXISTING_DATABASE:'1'});assert.equal(exists.status,1);assert.match(exists.stderr,/already exists/);
+  assert(!(await readFile(record,'utf8')).includes('DROP DATABASE'));
+  const replaced=managedRun(['--replace'],{EXISTING_DATABASE:'1'});assert.equal(replaced.status,0,replaced.stderr);
+  assert((await readFile(record,'utf8')).includes('DROP DATABASE'));
+  assert.equal(managedRun([],{FAIL_RESTORE:'1'}).status,1);
+  await assert.rejects(access(join(home,'.mytikas/operation.lock')));
+  // Legacy public deployments still resolve to their fixed project without a managed pointer.
+  await rm(stateFile);await writeFile(record,'');
+  assert.equal(managedRun().status,0);
+  const legacy=(await readFile(record,'utf8')).trim().split('\n').map(JSON.parse);
+  assert(legacy.every(c=>c.args.includes('mytikas-public')&&!c.args.includes('--context')));
+  console.log('Restore target/lock guards, managed routing, environment isolation and failure cleanup passed.');
 } finally { await rm(directory, { recursive: true, force: true }); }

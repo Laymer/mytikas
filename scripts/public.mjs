@@ -1,17 +1,31 @@
+import { homedir } from 'node:os';
+import { existsSync, rmdirSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, appendFileSync, readFileSync, statSync, openSync, closeSync, unlinkSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const envFile = resolve(root, '.env.public');
-const tokenFile = resolve(root, '.public/tunnel-token');
 const [command = 'help', ...args] = process.argv.slice(2);
+const machineHome = resolve(homedir(), '.mytikas');
+// Share the machine operation lock, acquired before reading its deployment pointer.
+if (command !== 'help') {
+  const lock = resolve(machineHome, 'operation.lock');
+  try { mkdirSync(machineHome, { recursive: true, mode: 0o700 }); mkdirSync(lock, { mode: 0o700 }); }
+  catch { console.error('Machine operation in progress; use mytikas-machine.sh status.'); process.exit(1); }
+  process.once('exit', () => { try { rmdirSync(lock); } catch {} });
+}
+const machineFile = resolve(machineHome, 'machine.json');
+const machine = existsSync(machineFile) ? JSON.parse(readFileSync(machineFile, 'utf8')) : null;
+const managed = machine?.active;
+const root = managed?.root || resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const envFile = managed?.env || resolve(root, '.env.public');
+const tokenFile = managed?.token || resolve(root, '.public/tunnel-token');
 const env = { ...process.env };
-for (const key of Object.keys(env)) if (/^(POSTGRES_|DATABASE_|RUNTIME_DATABASE_|SESSION_|APP_ORIGIN$|PUBLIC_|DISCORD_|MYTIKAS_|DEPLOYMENT_PROFILE$|INGRESS_MODE$|COMPOSE_)/.test(key)) delete env[key];
-const dc = ['compose', '--project-name', 'mytikas-public', '--env-file', envFile, '-f', resolve(root, 'compose.public.yaml')];
+for (const key of Object.keys(env)) if (/^(DOCKER_HOST$|DOCKER_CONTEXT$|POSTGRES_|DATABASE_|RUNTIME_DATABASE_|SESSION_|APP_ORIGIN$|PUBLIC_|DISCORD_|MYTIKAS_|DEPLOYMENT_PROFILE$|INGRESS_MODE$|COMPOSE_)/.test(key)) delete env[key];
+const dc = [...(machine?.context ? ['--context', machine.context] : []), 'compose', '--project-name', managed?.project || 'mytikas-public', '--env-file', envFile, '-f', managed?.compose || resolve(root, 'compose.public.yaml')];
 function run(args, options = {}) {
+  if (machine?.context && args[0] !== '--context') args = ['--context', machine.context, ...args];
   const result = spawnSync('docker', args, { cwd: root, env, stdio: 'inherit', ...options });
   if (result.error || result.status !== 0) throw new Error('Docker command failed; check Docker Desktop/WSL integration and configuration.');
   return result;
@@ -31,6 +45,10 @@ try {
   if (!['init','doctor','up','status','logs','admin','backup','stop','down'].includes(command) || args.length > (command === 'backup' ? 1 : 0))
     throw new Error('Invalid command or arguments; use help.');
   if (process.versions.node.split('.')[0] !== '24') throw new Error('Node.js 24 required.');
+  if (existsSync(resolve(root, '.public/machine-handoff.json')) && !['status','doctor','logs','stop','down'].includes(command)) throw new Error('This checkout handed off hosting; use the machine launcher.');
+  if (machine && !['active','idle'].includes(machine.phase) && !['status','doctor','logs','stop','down'].includes(command))
+    throw new Error('This machine handed off hosting or has an incomplete transfer; use mytikas-machine.sh recovery/import.');
+  if (managed && command === 'init') throw new Error('Managed deployment secrets are preserved by import.');
   if (command === 'init') {
     mkdirSync(resolve(root, '.public'), { recursive: true, mode: 0o700 });
     createPrivate(envFile, `POSTGRES_PASSWORD=${randomBytes(32).toString('hex')}\nSESSION_SECRET=${randomBytes(48).toString('hex')}\nDISCORD_WEBHOOK_URL=\nPUBLIC_UID=${process.getuid()}\nPUBLIC_GID=${process.getgid()}\n`);
@@ -55,8 +73,9 @@ try {
     case 'up':
       // Tear down the namespace consumer before replacing its provider.
       run([...dc, 'rm', '--stop', '--force', 'tunnel']);
-      run([...dc, 'build', 'app']);
-      run([...dc, 'up', '-d', '--no-build', '--wait', '--wait-timeout', '180', 'app', 'worker']);
+      if (!managed) run([...dc, 'build', 'app']);
+      else run([...dc, 'up', '-d', '--no-deps', '--wait', '--wait-timeout', '180', 'db']);
+      run([...dc, 'up', '-d', '--no-build', ...(managed ? ['--no-deps'] : []), '--wait', '--wait-timeout', '180', 'app', 'worker']);
       run([...dc, 'up', '-d', '--force-recreate', 'tunnel']);
       break;
     case 'status': run([...dc, 'ps', '-a']); break;

@@ -298,3 +298,7 @@ The [implementation tracker](docs/IMPLEMENTATION-PLAN.md) distinguishes verified
 Run `npm run typecheck`, `npm run coverage:backend`, and `npm run coverage:utilities` for backend/tool checks. Browser compatibility uses `BROWSER=chromium|firefox|webkit npm run test:browser`; Chromium collects coverage with `FRONTEND_COVERAGE=1`, followed by the same setting for `npm run test:landing:browser`, then `npm run coverage:frontend`. `npm run coverage:check` validates the measured baseline. See the coverage report documentation for exclusions and remaining gaps.
 
 The [published-artifact verification record](docs/VERIFICATION.md) contains the tested source commit, immutable image digest, landing preview and remaining live-launch blockers.
+
+### Move public hosting between WSL2 and Intel macOS
+
+Use `./mytikas-machine.sh migrate` on the current host, copy its private ZIP and the launcher, then run `./mytikas-machine.sh import /path/to/archive.zip` on the receiver. Reverse those commands with a new export to return. See [machine migration and recovery](docs/MACHINE-MIGRATION.md) for prerequisites, downtime, credential handling, the 4 GiB archive limit and the pending real-Mac acceptance rehearsal.

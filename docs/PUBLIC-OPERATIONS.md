@@ -37,3 +37,7 @@ Local validation covers Compose structure and helper behavior with a fake Docker
 Backup and fresh-target restore commands, recovery drill evidence, and rotation procedures: [Recovery](RECOVERY.md).
 
 The same commands are available through the main helper: `./mytikas.sh public init`, `./mytikas.sh public doctor`, `./mytikas.sh public up` and the other public subcommands delegate to the isolated Node helper.
+
+## Moving hosting between laptops
+
+Use the standalone [two-way machine migration launcher](MACHINE-MIGRATION.md) to preserve the exact runtime and all account/session data. `migrate` leaves the source stopped; `import` stages a fresh destination volume and starts the connector last. Public helpers resolve the managed project and refuse ordinary startup on a handed-off source. A failed import requires explicit recovery or resuming the same archive; helpers never silently restart an old copy.

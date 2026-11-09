@@ -15,11 +15,13 @@ jobs:
       - run: npm run build
       - run: npm run typecheck
       - run: npm audit --omit=dev --audit-level=high
-      - run: bash -n mytikas.sh
-      - run: docker run --rm -v "$PWD:/mnt:ro" koalaman/shellcheck@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d mytikas.sh
-      - run: for file in public/*.js scripts/*.mjs; do node --check "$file" || exit 1; done
+      - run: for file in mytikas.sh mytikas-machine.sh; do bash -n "$file" || exit 1; done
+      - run: docker run --rm -v "$PWD:/mnt:ro" koalaman/shellcheck@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d mytikas.sh mytikas-machine.sh
+      - run: for file in public/*.js scripts/*.mjs scripts/machine/*.mjs; do node --check "$file" || exit 1; done
       - run: npm run test:helper
       - run: npm run test:public
+      - run: node scripts/build-machine.mjs --check
+      - run: npm run test:machine
       - run: npm run test:cloudflare
       - run: npm run test:landing
       - run: node tests/restore.mjs
@@ -117,6 +119,7 @@ jobs:
       - run: npm run test:public:container
         env:
           IMAGE_ARCHIVE: /tmp/mytikas-tested.tar
+      - run: npm run test:machine:container
       - run: npm run test:cloud:rehearsal
         env:
           REHEARSAL_IMAGE: mytikas-tested:latest
@@ -235,3 +238,19 @@ jobs:
           name: image-digest
           path: image-digest.json
           retention-days: 30
+
+  machine-launcher:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: ci-required
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - run: sha256sum mytikas-machine.sh > mytikas-machine.sh.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: mytikas-machine-${{ github.sha }}
+          path: |
+            mytikas-machine.sh
+            mytikas-machine.sh.sha256
+            docs/MACHINE-MIGRATION.md
+          retention-days: 90
