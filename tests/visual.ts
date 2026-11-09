@@ -75,7 +75,7 @@ try {
   await page.keyboard.press("Tab");
   await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("alert")).toContainText("session has expired");
+  await expect(page.getByRole("alert")).toHaveText("Email or password is incorrect.");
   await expect(page.getByRole("alert")).toBeFocused();
   await expect(page.locator("#login-email")).toHaveValue("keyboard@example.test");
   await expect(page.locator("#login-password")).toHaveValue("Incorrect-test-password");

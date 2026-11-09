@@ -127,6 +127,26 @@ try {
   await checkpoint();
   await page.getByRole("link", { name: "Return to sign in" }).click();
   await page.locator("#login-email").fill("roster.summit@example.test");
+  // Password managers can retain the old password after a reset. A rejected
+  // sign-in must identify invalid credentials, not an expired session.
+  await page.locator("#login-password").fill(PASS);
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.locator("#message")).toHaveText(
+    "Email or password is incorrect.",
+  );
+  await expect(page.locator("#login-email")).toHaveValue(
+    "roster.summit@example.test",
+  );
+  await expect(page.locator("#login-password")).toHaveValue(PASS);
+  await expect(
+    page.getByRole("button", { name: "Sign in", exact: true }),
+  ).toBeEnabled();
+  await page.locator("#login-email").fill("unknown.reset@example.test");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.locator("#message")).toHaveText(
+    "Email or password is incorrect.",
+  );
+  await page.locator("#login-email").fill("roster.summit@example.test");
   await page.locator("#login-password").fill(changed);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(
