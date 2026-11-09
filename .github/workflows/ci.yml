@@ -116,6 +116,9 @@ jobs:
       - run: npm run test:public:container
         env:
           IMAGE_ARCHIVE: /tmp/mytikas-tested.tar
+      - run: npm run test:cloud:rehearsal
+        env:
+          REHEARSAL_IMAGE: mytikas-tested:latest
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: tested-container

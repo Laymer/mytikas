@@ -9,22 +9,35 @@ try {
   mkdirSync(join(root, 'bin'));
   copyFileSync('scripts/public.mjs', join(root, 'scripts/public.mjs'));
   const record = join(root, 'calls');
-  writeFileSync(join(root,'bin/docker'), '#!/usr/bin/env node\nimport("node:fs").then(fs=>{fs.appendFileSync(process.env.RECORD,JSON.stringify({args:process.argv.slice(2),override:process.env.POSTGRES_PASSWORD})+"\\n"); if(process.argv.includes("pg_dump")){process.stdout.write("fixture-backup"); if(process.env.FAIL_BACKUP)process.exitCode=1;} });\n', {mode:0o700});
-  const env = {...process.env, PATH:join(root,'bin')+':'+process.env.PATH, RECORD:record, POSTGRES_PASSWORD:'ambient-override'};
+  writeFileSync(join(root,'bin/docker'), '#!/usr/bin/env node\nimport("node:fs").then(fs=>{fs.appendFileSync(process.env.RECORD,JSON.stringify({args:process.argv.slice(2),override:process.env.POSTGRES_PASSWORD,runtimeOverride:process.env.RUNTIME_DATABASE_PASSWORD})+"\\n"); if(process.argv.includes("pg_dump")){process.stdout.write("fixture-backup"); if(process.env.FAIL_BACKUP)process.exitCode=1;} });\n', {mode:0o700});
+  const env = {...process.env, PATH:join(root,'bin')+':'+process.env.PATH, RECORD:record, POSTGRES_PASSWORD:'ambient-override', RUNTIME_DATABASE_PASSWORD:'ambient-runtime-override'};
   const run = (...args) => spawnSync(process.execPath,[join(root,'scripts/public.mjs'),...args],{env,encoding:'utf8'});
   assert.equal(run('init').status,0);
   const initial = readFileSync(join(root,'.env.public'),'utf8');
   assert(!initial.includes('ambient-override'));
+  assert(!initial.includes('ambient-runtime-override'));
+  assert.match(initial,/^RUNTIME_DATABASE_PASSWORD=[0-9a-f]{64}$/m);
   assert.equal(statSync(join(root,'.env.public')).mode & 0o777, 0o600);
   assert.equal(run('init').status,0);
   assert.equal(readFileSync(join(root,'.env.public'),'utf8'),initial);
+  const legacy = initial.replace(/^RUNTIME_DATABASE_PASSWORD=.*\n/m, '') + '# preserved legacy comment without final newline';
+  writeFileSync(join(root,'.env.public'),legacy);
+  assert.equal(run('init').status,0);
+  const upgraded=readFileSync(join(root,'.env.public'),'utf8');
+  assert(upgraded.startsWith(legacy+'\n'));
+  assert.match(upgraded,/^RUNTIME_DATABASE_PASSWORD=[0-9a-f]{64}$/m);
+  assert.equal(run('init').status,0);
+  assert.equal(readFileSync(join(root,'.env.public'),'utf8'),upgraded);
+  assert.equal(statSync(join(root,'.env.public')).mode & 0o777,0o600);
   assert.equal(run('up').status,1);
   writeFileSync(join(root,'.public/tunnel-token'),'fixture-token');
   assert.equal(run('up').status,0);
   const calls=readFileSync(record,'utf8').trim().split('\n').map(JSON.parse);
-  for(const c of calls){assert.equal(c.override,undefined);if(c.args.includes('--project-name'))assert(c.args.includes('mytikas-public'));}
+  for(const c of calls){assert.equal(c.override,undefined);assert.equal(c.runtimeOverride,undefined);if(c.args.includes('--project-name'))assert(c.args.includes('mytikas-public'));}
   const removal=calls.findIndex(c=>c.args.includes('rm'));
-  const app=calls.findIndex(c=>c.args.includes('--build'));
+  const build=calls.findIndex(c=>c.args.includes('build'));
+  const app=calls.findIndex(c=>c.args.includes('--no-build'));
+  assert(build>=0&&build<app,'Build one shared image before replacement');
   const tunnel=calls.findIndex(c=>c.args.includes('--force-recreate'));
   assert(removal>=0 && removal<app && app<tunnel);
   assert.equal(run('backup','backups/check.dump').status,0);
@@ -39,6 +52,9 @@ try {
   assert(!/^\s+ports:/m.test(compose));
   assert.match(compose,/network_mode: service:app/);
   assert.match(compose,/--token-file/);
+  assert.match(compose,/DATABASE_URL: postgres:\/\/mytikas_runtime:/);
+  assert.match(compose,/runtime-grants:/);
+  assert.match(compose,/public-runtime-role.sql/);
   assert(!compose.includes('dist/demo/'));
   console.log('Public helper isolation, initialization, replacement, and backup tests passed.');
 } finally {rmSync(root,{recursive:true,force:true});}

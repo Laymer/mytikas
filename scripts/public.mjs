@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync, readFileSync, statSync, openSync, closeSync, unlinkSync } from 'node:fs';
+import { mkdirSync, writeFileSync, appendFileSync, readFileSync, statSync, openSync, closeSync, unlinkSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -9,7 +9,7 @@ const envFile = resolve(root, '.env.public');
 const tokenFile = resolve(root, '.public/tunnel-token');
 const [command = 'help', ...args] = process.argv.slice(2);
 const env = { ...process.env };
-for (const key of Object.keys(env)) if (/^(POSTGRES_|DATABASE_|SESSION_|APP_ORIGIN$|PUBLIC_|DISCORD_|MYTIKAS_|DEPLOYMENT_PROFILE$|INGRESS_MODE$|COMPOSE_)/.test(key)) delete env[key];
+for (const key of Object.keys(env)) if (/^(POSTGRES_|DATABASE_|RUNTIME_DATABASE_|SESSION_|APP_ORIGIN$|PUBLIC_|DISCORD_|MYTIKAS_|DEPLOYMENT_PROFILE$|INGRESS_MODE$|COMPOSE_)/.test(key)) delete env[key];
 const dc = ['compose', '--project-name', 'mytikas-public', '--env-file', envFile, '-f', resolve(root, 'compose.public.yaml')];
 function run(args, options = {}) {
   const result = spawnSync('docker', args, { cwd: root, env, stdio: 'inherit', ...options });
@@ -34,8 +34,12 @@ try {
   if (command === 'init') {
     mkdirSync(resolve(root, '.public'), { recursive: true, mode: 0o700 });
     createPrivate(envFile, `POSTGRES_PASSWORD=${randomBytes(32).toString('hex')}\nSESSION_SECRET=${randomBytes(48).toString('hex')}\nDISCORD_WEBHOOK_URL=\nPUBLIC_UID=${process.getuid()}\nPUBLIC_GID=${process.getgid()}\n`);
+    privateFile(envFile);
+    const existing = readFileSync(envFile, 'utf8');
+    if (!/^\s*(?:export\s+)?RUNTIME_DATABASE_PASSWORD\s*=/m.test(existing))
+      appendFileSync(envFile, `${existing.endsWith('\n') ? '' : '\n'}RUNTIME_DATABASE_PASSWORD=${randomBytes(32).toString('hex')}\n`);
     createPrivate(tokenFile, '');
-    console.log('Private .env.public and .public/tunnel-token initialized; existing files preserved. Paste the tunnel token into its file using a private editor.');
+    console.log('Private .env.public and .public/tunnel-token initialized; existing credentials preserved; missing runtime database secret added. Paste the tunnel token into its file using a private editor.');
     process.exit(0);
   }
   privateFile(envFile);
@@ -51,7 +55,8 @@ try {
     case 'up':
       // Tear down the namespace consumer before replacing its provider.
       run([...dc, 'rm', '--stop', '--force', 'tunnel']);
-      run([...dc, 'up', '-d', '--build', '--wait', '--wait-timeout', '180', 'app', 'worker']);
+      run([...dc, 'build', 'app']);
+      run([...dc, 'up', '-d', '--no-build', '--wait', '--wait-timeout', '180', 'app', 'worker']);
       run([...dc, 'up', '-d', '--force-recreate', 'tunnel']);
       break;
     case 'status': run([...dc, 'ps', '-a']); break;
