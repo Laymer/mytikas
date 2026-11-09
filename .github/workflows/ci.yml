@@ -12,6 +12,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: exit 1 # Deliberate branch-protection acceptance failure
       - run: npm run build
       - run: bash -n mytikas.sh
       - run: npm run test:helper
