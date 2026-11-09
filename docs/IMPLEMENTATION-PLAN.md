@@ -84,7 +84,7 @@ The empty remote permits one audited bootstrap publication. Subsequent feature c
 | P08.2 — Verified TLS and CA | ✅ Done | [Merged PR #2](https://github.com/Laymer/mytikas/pull/2); [passing complete CI](https://github.com/Laymer/mytikas/actions/runs/42594323149); scope/limitations below |
 | P08.3 — Checksums and adoption | ✅ Done | [Merged PR #2](https://github.com/Laymer/mytikas/pull/2); [passing complete CI](https://github.com/Laymer/mytikas/actions/runs/42594323149); scope/limitations below |
 | P08.4 — Serialized additive migrations | ✅ Done | [Merged PR #2](https://github.com/Laymer/mytikas/pull/2); [passing complete CI](https://github.com/Laymer/mytikas/actions/runs/42594323149); scope/limitations below |
-| P08.5 — Separate owner runtime grants | 🚧 In progress | [Merged PR #2](https://github.com/Laymer/mytikas/pull/2); [passing complete CI](https://github.com/Laymer/mytikas/actions/runs/42594323149); scope/limitations below |
+| P08.5 — Separate owner runtime grants | ✅ Done | [Merged PR #6](https://github.com/Laymer/mytikas/pull/6); [passing required CI](https://github.com/Laymer/mytikas/actions/runs/42601083300); same-schema cloud rollback boundary |
 | P08.6 — Schema readiness and liveness | ✅ Done | [Merged PR #2](https://github.com/Laymer/mytikas/pull/2); [passing complete CI](https://github.com/Laymer/mytikas/actions/runs/42594323149); scope/limitations below |
 | P08.7 — Migration TLS and preservation tests | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
 | **P09 — Public laptop stack** | 🚧 In progress | |
@@ -115,7 +115,7 @@ The empty remote permits one audited bootstrap publication. Subsequent feature c
 | P12.2 — Transitions rules concurrency roles | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
 | P12.3 — Armory failure races | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
 | P12.4 — Discord failure and crash recovery | ✅ Done | [Merged PR #5](https://github.com/Laymer/mytikas/pull/5); [passing main CI](https://github.com/Laymer/mytikas/actions/runs/42598958115) |
-| P12.5 — Configuration CLI helper failure paths | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P12.5 — Configuration CLI helper failure paths | 🚧 In progress | [Merged PR #6](https://github.com/Laymer/mytikas/pull/6): real CLI/shutdown and helper tests pass; utility error-branch gaps remain in COVERAGE.md |
 | P12.6 — Profile and fixture isolation | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
 | P12.7 — Coverage gaps and gate | ✅ Done | [Merged PR #2](https://github.com/Laymer/mytikas/pull/2); [passing complete CI](https://github.com/Laymer/mytikas/actions/runs/42594323149); scope/limitations below |
 | **P13 — CI and artifacts** | 🚧 In progress | |
@@ -128,12 +128,12 @@ The empty remote permits one audited bootstrap publication. Subsequent feature c
 | P13.7 — Image security and inventory | ✅ Done | [Merged PR #5](https://github.com/Laymer/mytikas/pull/5); [passing main CI](https://github.com/Laymer/mytikas/actions/runs/42598958115) |
 | P13.8 — Same-tested-commit publication | ✅ Done | [Merged PR #2](https://github.com/Laymer/mytikas/pull/2); [passing complete CI](https://github.com/Laymer/mytikas/actions/runs/42594323149); scope/limitations below |
 | P13.9 — Protection bypass regression checks | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
-| **P14 — Cloud handoff** | 🚧 In progress | |
+| **P14 — Cloud handoff** | ✅ Done | |
 | P14.1 — Portable web worker migration entrypoints | ✅ Done | [Merged PR #2](https://github.com/Laymer/mytikas/pull/2); [passing complete CI](https://github.com/Laymer/mytikas/actions/runs/42594323149); scope/limitations below |
 | P14.2 — External DB and secrets | ✅ Done | [Merged PR #2](https://github.com/Laymer/mytikas/pull/2); [passing complete CI](https://github.com/Laymer/mytikas/actions/runs/42594323149); scope/limitations below |
 | P14.3 — Ingress sizing pool health contracts | ✅ Done | [Merged PR #2](https://github.com/Laymer/mytikas/pull/2); [passing complete CI](https://github.com/Laymer/mytikas/actions/runs/42594323149); scope/limitations below |
 | P14.4 — Deployment order | ✅ Done | [Merged PR #2](https://github.com/Laymer/mytikas/pull/2); [passing complete CI](https://github.com/Laymer/mytikas/actions/runs/42594323149); scope/limitations below |
-| P14.5 — Upgrade rollback rehearsal | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P14.5 — Upgrade rollback rehearsal | ✅ Done | [Merged PR #6](https://github.com/Laymer/mytikas/pull/6); [passing required CI](https://github.com/Laymer/mytikas/actions/runs/42601083300); same-schema cloud rollback boundary |
 | P14.6 — Laptop-to-cloud migration | ✅ Done | [Merged PR #2](https://github.com/Laymer/mytikas/pull/2); [passing complete CI](https://github.com/Laymer/mytikas/actions/runs/42594323149); scope/limitations below |
 | P14.7 — Operational signals | ✅ Done | [Merged PR #2](https://github.com/Laymer/mytikas/pull/2); [passing complete CI](https://github.com/Laymer/mytikas/actions/runs/42594323149); scope/limitations below |
 | **P15 — Live cutover** | 🚧 In progress | |
@@ -164,7 +164,7 @@ The empty remote permits one audited bootstrap publication. Subsequent feature c
 | P17.2 — Verified operations guides | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
 | P17.3 — Coverage gaps limitations | ✅ Done | [Merged PR #2](https://github.com/Laymer/mytikas/pull/2); [passing complete CI](https://github.com/Laymer/mytikas/actions/runs/42594323149); scope/limitations below |
 | P17.4 — Tracker evidence reconciliation | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
-| P17.5 — Accepted release tag and artifact provenance | 🚧 In progress | Implementation and local verification; final PR/CI and remaining gaps below |
+| P17.5 — Accepted release tag and artifact provenance | ⬜ To do | Artifact provenance recorded; accepted-release tag awaits external showcase |
 
 ## Verification log
 
@@ -198,4 +198,4 @@ Published implementation artifacts, exact digest, pull/run smoke, current covera
 
 Additional offline verification adds `tests/database-tls.ts` (real verified TLS, wrong CA/hostname), `tests/worker-races.ts` (overlapping claims, expired leases and SIGKILL/retry), and `tests/visual.ts` (original-design desktop/mobile pixel comparison plus keyboard/error behavior). CI now includes a pinned scanner/SBOM job against the tested image archive and blocks fixable HIGH/CRITICAL findings. Unfixed base-image findings remain visible for live-launch review; see IMAGE-SECURITY.md. These changes do not supply missing Cloudflare/Discord account setup or external acceptance evidence.
 
-Latest follow-up: public runtime privilege separation, exact shared container image checks, real CLI/shutdown tests, and published-image cloud upgrade/rollback rehearsal passed locally. Merge/CI evidence will be recorded after review. Live P15/P16 acceptance remains pending.
+Latest follow-up: public runtime privilege separation, exact shared container image checks, real CLI/shutdown tests, and published-image cloud upgrade/rollback rehearsal passed locally. Independent review completed; PR #6 merged as `08ba63d9170811f724926815a8033cdf2e690134` after required CI run 42601083300 passed. Live P15/P16 acceptance remains pending.
