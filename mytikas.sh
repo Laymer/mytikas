@@ -82,7 +82,10 @@ case "$COMMAND" in
     for service in "$@"; do [[ $service != -* ]] || fail 'Invalid service'; done
     "${DC[@]}" logs --tail 100 "${FOLLOW[@]}" "$@" ;;
   shell) [[ $# -le 1 && ${1:-app} != -* ]] || fail 'Usage: shell [service]'; "${DC[@]}" exec "${TTY[@]}" "${1:-app}" sh ;;
-  db) "${DC[@]}" exec "${TTY[@]}" db sh -c 'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"' sh "$@" ;;
+  db)
+    # Expand these variables in the database container, not on the host.
+    # shellcheck disable=SC2016
+    "${DC[@]}" exec "${TTY[@]}" db sh -c 'exec psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" "$@"' sh "$@" ;;
   migrate) "${DC[@]}" run --rm -T migrate ;;
   admin) "${DC[@]}" exec "${TTY[@]}" app node dist/admin-cli.js ;;
   backup)
@@ -93,6 +96,8 @@ case "$COMMAND" in
     umask 077
     (set -o noclobber; : > "$DEST") 2>/dev/null || fail 'Backup destination exists or cannot be created'
     trap 'rm -f -- "$DEST"' EXIT
+    # Expand database credentials inside the container.
+    # shellcheck disable=SC2016
     "${DC[@]}" exec -T db sh -c 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "$DEST"
     trap - EXIT
     printf 'Backup saved: %s\n' "$DEST" ;;

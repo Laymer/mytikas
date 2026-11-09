@@ -8,3 +8,9 @@ test-results
 playwright-report
 
 backups
+
+coverage
+.nyc_output
+landing-dist
+.public-secrets
+.public

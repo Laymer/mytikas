@@ -1,3 +1,5 @@
+import { schemaReady } from "./migrate.js";
+import { isIP } from "node:net";
 import express, {
   type Request,
   type Response,
@@ -7,7 +9,7 @@ import session from "express-session";
 import connectPg from "connect-pg-simple";
 import helmet from "helmet";
 import argon2 from "argon2";
-import { randomBytes, timingSafeEqual, createHash } from "node:crypto";
+import { randomBytes, randomUUID, timingSafeEqual, createHash } from "node:crypto";
 import { resolve } from "node:path";
 import type { Config } from "./config.js";
 import { transaction, type Pool } from "./db.js";
@@ -45,6 +47,17 @@ const publicUser = (u: any): User => ({
   email: u.email,
   role: u.role,
 });
+export const isLoopbackIngress = (address: string) =>
+  address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
+export function clientIdentity(req: Request, cfg: Config): string {
+  const peer = req.socket.remoteAddress || "unknown";
+  if (cfg.deploymentProfile === "public" && cfg.ingressMode === "cloudflare-loopback" && isLoopbackIngress(peer)) {
+    const client = req.get("cf-connecting-ip");
+    if (client && isIP(client)) return client;
+  }
+  // Never use X-Forwarded-For for authentication limits.
+  return peer;
+}
 export const hashPassword = (value: string) =>
   argon2.hash(value, {
     type: argon2.argon2id,
@@ -58,8 +71,23 @@ export function createApp(
   verify: Verify = verifyMembership,
 ) {
   const app = express();
+  if (cfg.deploymentProfile === "public" || cfg.deploymentProfile === "cloud") {
+    app.use((req, res, next) => {
+      const requestId = randomUUID();
+      const started = Date.now();
+      res.setHeader("X-Request-ID", requestId);
+      res.on("finish", () => console.log(JSON.stringify({
+        event: "request", requestId, method: req.method,
+        status: res.statusCode, durationMs: Date.now() - started,
+      })));
+      next();
+    });
+  }
   const cookieName = cfg.demo ? "mytikas.demo.sid" : "mytikas.sid";
   app.disable("x-powered-by");
+  app.set("trust proxy", cfg.ingressMode && cfg.ingressMode !== "none"
+    ? (address: string, hop: number) => hop === 0 && isLoopbackIngress(address)
+    : false);
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -70,19 +98,31 @@ export function createApp(
       strictTransportSecurity: cfg.secureCookies ? undefined : false,
     }),
   );
-  app.get("/api/runtime", (_req, res) => res.json({ mode: cfg.demo ? "demo" : "normal" }));
-  app.get("/api/health", async (_req, res) => {
-    try {
-      await pool.query("SELECT 1 FROM rules LIMIT 1");
-      res.json({ ready: true });
-    } catch {
-      res.status(503).json({ ready: false });
-    }
-  });
   app.use("/api", (_req, res, next) => {
     res.set("Cache-Control", "no-store");
     next();
   });
+  app.get("/api/runtime", (_req, res) => res.json({
+    mode: cfg.demo ? "demo" : "normal",
+    publicSiteOrigin: cfg.publicSiteOrigin || cfg.origin,
+  }));
+  app.get("/api/live", (_req, res) => res.json({ live: true }));
+  const ready = async (_req: Request, res: Response) => {
+    try {
+      if (!await schemaReady(pool)) throw new Error("Schema is not ready");
+      res.json({ ready: true });
+    } catch {
+      res.status(503).json({ ready: false });
+    }
+  };
+  app.get("/api/health", ready);
+  // Deliberately mounted before session middleware: this endpoint never creates sessions.
+  app.get("/api/availability", (req, res, next) => {
+    res.vary("Origin");
+    if (req.get("origin") === cfg.publicSiteOrigin)
+      res.set("Access-Control-Allow-Origin", cfg.publicSiteOrigin!);
+    next();
+  }, ready);
   app.use("/api", express.json({ limit: "128kb" }));
   const Store = connectPg(session);
   const sessionStore = new Store({
@@ -160,7 +200,7 @@ export function createApp(
         ? req.body.email.trim().toLowerCase()
         : "";
     const keys = [
-      ["ip:" + req.ip, 40],
+      ["ip:" + clientIdentity(req, cfg), 40],
       ["email:" + account, 12],
     ] as const;
     for (const [raw, max] of keys) {
