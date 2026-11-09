@@ -9,7 +9,11 @@ try {
   const mode = process.argv[2];
   if (mode === "smtp") {
     const transport = smtpTransport(cfg);
-    try { await transport.verify(); }
+    try {
+      // A connection-only success must not masquerade as authenticated SMTP.
+      if (!cfg.smtpUser || !cfg.smtpPassword) throw Object.assign(new Error(), { code: "EAUTH" });
+      await transport.verify();
+    }
     catch (error) { console.error(`SMTP preflight failed: ${mailFailureCategory(error)}`); process.exitCode = 1; }
     finally { transport.close(); }
   } else if (mode === "schema") {

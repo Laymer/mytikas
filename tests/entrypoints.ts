@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { EventEmitter, once } from 'node:events';
 import { createServer } from 'node:http';
-import { connect, type Socket } from 'node:net';
+import { connect, createServer as createTcpServer, type Socket } from 'node:net';
 import { harness, Client, listen, close } from './harness.js';
 
 async function bounded<T>(promise: Promise<T>, label: string, ms = 10000): Promise<T> {
@@ -84,13 +84,22 @@ try {
   for (const [mode, extra, expected] of [
     ['config', {}, 0], ['schema', {}, 0], ['invalid', {}, 1],
     ['config', {SMTP_USER:'fixture',SMTP_PASSWORD:''}, 1],
-    ['smtp', {SMTP_HOST:'127.0.0.1',SMTP_PORT:'1'}, 1],
+    ['smtp', {SMTP_HOST:'127.0.0.1',SMTP_PORT:'1',SMTP_USER:'fixture',SMTP_PASSWORD:'fixture'}, 1],
   ] as const) {
     const check=monitored(process.execPath,['--import','tsx','src/deployment-preflight.ts',mode],extra);
     assert.equal((await bounded(check.exited,'candidate preflight'))[0],expected);
     assert(!check.output().includes(h.cfg.databaseUrl));
     if(mode==='smtp')assert.match(check.output(),/SMTP preflight failed: connection/);
   }
+  let unauthenticatedConnections=0;
+  const authProbe=createTcpServer(socket=>{unauthenticatedConnections++;socket.destroy();});
+  await new Promise<void>(resolve=>authProbe.listen(0,'127.0.0.1',resolve));
+  try {
+    const check=monitored(process.execPath,['--import','tsx','src/deployment-preflight.ts','smtp'],{SMTP_HOST:'127.0.0.1',SMTP_PORT:String((authProbe.address() as {port:number}).port),SMTP_USER:'',SMTP_PASSWORD:''});
+    assert.equal((await bounded(check.exited,'missing SMTP authentication'))[0],1);
+    assert.match(check.output(),/SMTP preflight failed: authentication/);
+    assert.equal(unauthenticatedConnections,0);
+  } finally {await new Promise<void>((resolve,reject)=>authProbe.close(error=>error?reject(error):resolve()));}
   await h.pool.query("UPDATE migrations SET checksum='mismatch' WHERE name=(SELECT min(name) FROM migrations)");
   const mismatch=monitored(process.execPath,['--import','tsx','src/deployment-preflight.ts','schema']);
   assert.equal((await bounded(mismatch.exited,'schema refusal'))[0],1);
