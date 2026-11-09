@@ -17,6 +17,10 @@ class Engine extends Machine {
     this.calls.push(args);
     if(args[0]==='info')return JSON.stringify({OSType:'linux',Architecture:'amd64'});
     if(args[0]==='run')return '9999999999';
+    if(args[0]==='volume'&&args[1]==='inspect') {
+      if(this.missingVolume)throw new Error('Previous volume absent');
+      return JSON.stringify([{Name:args[2]}]);
+    }
     if(args[0]==='image'&&args[1]==='inspect')return JSON.stringify([{Os:'linux',Architecture:'amd64',Size:10}]);
     if(args[0]==='image'&&args[1]==='save'){fs.writeFileSync(args[3],'saved-image-fixture');return '';}
     if(args[0]==='create')return 'f'.repeat(64);
@@ -27,7 +31,10 @@ class Engine extends Machine {
     }
     if(args[0]==='compose') {
       const command=args[7],tail=args.slice(8);
+      if(command==='config'&&tail.includes('json'))return JSON.stringify({services:{db:{volumes:[{type:'volume',source:'data',target:'/var/lib/postgresql'}]}},volumes:{data:{name:'previous-data'}}});
+      if(command==='ps'&&tail.at(-1)==='db'&&this.dbRemoved)return '';
       if(command==='ps')return ({app:'a',worker:'b',db:'c',tunnel:'d'}[tail.at(-1)]||'a').repeat(64);
+      if(command==='up'&&tail.includes('tunnel')&&this.failTunnel)throw new Error('Recovery tunnel failed');
       if(command==='stop'&&tail.includes('app'))this.stopped=true;
       if(command==='exec'&&tail.includes('pg_dump'))fs.writeSync(options.stdio[1],'PGDMP-fixture');
       if(command==='exec'&&tail.includes('psql')) {
@@ -62,7 +69,16 @@ try {
   assert(machine.calls.some(a=>a.includes('down')&&!a.includes('--volumes')));
   await assert.rejects(()=>machine.migrate(),/handed off/);await assert.rejects(()=>machine.recover('source'),/before/);
   machine.save({phase:'export-stopped'});await machine.recover('source');assert.equal(machine.state.phase,'active');assert(!fs.existsSync(join(d.root,'.public/machine-handoff.json')));
-  const before=machine.state.active;machine.save({phase:'import-verified',previous:before,transfer:{next:before,writers:false}});await machine.recover('previous');assert.equal(machine.state.phase,'active');
+  const before=machine.state.active;machine.save({phase:'import-verified',previous:before,transfer:{next:before,writers:false}});
+  fs.writeFileSync(join(before.root,'.public/machine-handoff.json'),'{}');
+  await machine.recover('previous');assert.equal(machine.state.phase,'active');
+  assert(!fs.existsSync(join(before.root,'.public/machine-handoff.json')),'Successful previous recovery must release the checkout startup guard');
+  const failedRecovery=new Engine(join(root,'failed-recovery'));failedRecovery.save({phase:'import-verified',previous:before,transfer:{next:before,writers:false}});failedRecovery.failTunnel=true;
+  fs.writeFileSync(join(before.root,'.public/machine-handoff.json'),'{}');
+  await assert.rejects(()=>failedRecovery.recover('previous'),/Recovery tunnel failed/);
+  assert(fs.existsSync(join(before.root,'.public/machine-handoff.json')),'Failed activation must retain the startup guard');
+  failedRecovery.failTunnel=false;await failedRecovery.recover('previous');
+  assert(!fs.existsSync(join(before.root,'.public/machine-handoff.json')));
   machine.save({phase:'import-writers',transfer:{next:before,writers:true}});await machine.failureStop();assert(machine.calls.at(-1).includes('stop'));
   globalThis.fetch=async()=>({ok:false});await assert.rejects(()=>machine.publicCheck(),/HTTPS/);
   globalThis.fetch=async()=>({ok:true,json:async()=>({ready:true}),headers:{get:()=>null}});await assert.rejects(()=>machine.publicCheck(),/cookie/);
@@ -70,6 +86,21 @@ try {
   assert(!broken.calls.some(a=>a.includes('pg_dump')));
   const noSpace=new Engine(join(root,'no-space'));assert.throws(()=>noSpace.space(root,Number.MAX_SAFE_INTEGER),/free disk/);
   const unsafe=new Engine(join(root,'unsafe'));unsafe.run=()=> '[{"Endpoints":{"docker":{"Host":"tcp://remote:2375"}}}]';await assert.rejects(()=>unsafe.prepare(),/local Docker/);
+  for(const dbRemoved of [false,true]) {
+    const stopped=new Engine(join(root,dbRemoved?'previous-down':'previous-stopped'));stopped.stopped=true;stopped.dbRemoved=dbRemoved;
+    stopped.backupPrevious(d,join(stopped.home,'safety.dump'));
+    const inspected=stopped.calls.findIndex(a=>a[0]==='volume'&&a[1]==='inspect');
+    const up=stopped.calls.findIndex(a=>a.includes('up'));
+    const dump=stopped.calls.findIndex(a=>a.includes('pg_dump'));
+    assert(inspected>=0&&up>inspected&&dump>up);
+    assert.deepEqual(stopped.calls[up].slice(7),['up','-d','--no-deps','--no-recreate','--wait','--wait-timeout','180','db']);
+    assert(!stopped.calls.some(a=>a.includes('up')&&(a.includes('app')||a.includes('worker')||a.includes('tunnel'))));
+  }
+  const running=new Engine(join(root,'previous-running'));running.backupPrevious(d,join(running.home,'safety.dump'));
+  assert(!running.calls.some(a=>a.includes('up')),'A running previous database must not be recreated');
+  const missing=new Engine(join(root,'previous-missing'));missing.dbRemoved=true;missing.missingVolume=true;
+  assert.throws(()=>missing.backupPrevious(d,join(missing.home,'safety.dump')),/volume is unavailable/);
+  assert(!missing.calls.some(a=>a.includes('up')||a.includes('pg_dump')),'A missing previous volume must never be initialized');
   // Run the real CLI status/help/error paths in a private HOME, never the developer's machine state.
   for(const [args,status] of [[['status'],0],[['help'],0],[['wrong'],1],[['import'],1]]) {
     const r=spawnSync(process.execPath,[resolve('scripts/machine/core.mjs'),...args],{env:{...process.env,HOME:root},encoding:'utf8'});assert.equal(r.status,status,r.stderr);

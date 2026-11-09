@@ -58,7 +58,7 @@ try {
   a.save({phase:'handed-off',highest:2});await assert.rejects(()=>a.import(zip),/Stale/);
   const next=archive('4',3);await a.import(next);assert.equal(a.state.phase,'active');assert.equal(a.state.highest,3);
   const b=new Fake(join(root,'b'));b.failWorker=true;await assert.rejects(()=>b.import(zip),/worker failure/);assert.equal(b.state.phase,'import-writers');assert.equal(b.state.transfer.writers,true);
-  await assert.rejects(()=>b.recover('previous'),/forbidden/);b.failWorker=false;await b.import(zip);assert.equal(b.restoreCount,1);assert.equal(b.state.phase,'active');
+  await assert.rejects(()=>b.recover('previous'),/forbidden/);b.failWorker=false;b.space=()=>{throw new Error('No room for another extraction');};await b.import(zip);assert.equal(b.restoreCount,1);assert.equal(b.state.phase,'active');
   const d=new Fake(join(root,'d'));d.fingerprint=()=> '0'.repeat(64);await assert.rejects(()=>d.import(zip),/fingerprint/);assert.equal(d.state.transfer.writers,false);assert(!d.calls.some(v=>v.includes('up')&&v.includes('worker')));
   d.fingerprint=()=>manifest.fingerprint;await d.import(zip);assert.equal(d.restoreCount,2);
   const stopped=new Fake(join(root,'stopped'));stopped.id=(_d,s)=>s;stopped.inspect=()=>({State:{Running:false,OOMKilled:false,ExitCode:137}});await assert.rejects(()=>stopped.stop({project:'fixture'}),/did not drain/);

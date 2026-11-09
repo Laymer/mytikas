@@ -17,7 +17,7 @@ class Isolated extends Machine {
   writeDeployment(dir,c,m,project) {
     assert(project.startsWith('mytikas-'));const d=super.writeDeployment(dir,c,m,project);
     const compose=JSON.parse(fs.readFileSync(d.compose));
-    compose.services.tunnel={image:m.images.db,entrypoint:['sleep','infinity'],network_mode:'service:app'};
+    compose.services.tunnel={image:m.images.db,init:true,entrypoint:['sleep','infinity'],network_mode:'service:app'};
     fs.writeFileSync(d.compose,JSON.stringify(compose));projects.set(d.project,{machine:this,d});return d;
   }
   async publicCheck() {
@@ -50,6 +50,8 @@ try {
   const oldA=await initial(a,'source'),oldB=await initial(b,'destination','f'.repeat(64));
   await a.migrate();assert.equal(a.state.phase,'handed-off');assert.equal(a.dc(oldA,['ps','-a','-q']),'');
   const first=a.state.export.target;assert.equal(inspectZip(first).configuration.PUBLIC_UID,'501');
+  // Exercise import over a deliberately stopped destination while retaining its volume.
+  b.dc(oldB,['down']);
   await b.import(first);assert.equal(b.state.phase,'active');
   assert.equal(b.sql(b.state.active,"SELECT email || ':' || role || ':' || password_hash FROM users"),`source@fixture.test:ADMIN:${oldA.passwordHash}`);
   assert.equal(b.sql(oldB,'SELECT email FROM users'),'destination@fixture.test');

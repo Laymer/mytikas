@@ -95,6 +95,21 @@ export class Machine {
   }
   equal(a,b,message) {ensure(JSON.stringify(a)===JSON.stringify(b),message);}
   dump(d,file) {const fd=fs.openSync(file,'wx',0o600);try{this.dc(d,['exec','-T','db','pg_dump','-U','mytikas_public','-d','mytikas_public','-Fc'],{stdio:['ignore',fd,'pipe'],timeout:1800000});fs.fsyncSync(fd);}finally{fs.closeSync(fd);}}
+  backupPrevious(d,file) {
+    this.config(d);
+    const compose=JSON.parse(this.dc(d,['config','--format','json']));
+    const mounts=compose.services?.db?.volumes?.filter(v=>v.type==='volume'&&v.target==='/var/lib/postgresql')||[];
+    const volume=mounts.length===1&&compose.volumes?.[mounts[0].source]?.name;
+    ensure(typeof volume==='string'&&volume.length>0,'Previous database must use its existing named PostgreSQL volume');
+    let existing;
+    try {existing=JSON.parse(this.docker(['volume','inspect',volume]));}
+    catch {throw new Error('Previous database volume is unavailable; refusing to initialize an empty replacement');}
+    ensure(existing.length===1&&existing[0].Name===volume,'Previous database volume is missing; refusing to initialize an empty replacement');
+    const id=this.dc(d,['ps','-a','-q','db']);
+    if(!id||!this.inspect(id).State.Running)
+      this.dc(d,['up','-d','--no-deps','--no-recreate','--wait','--wait-timeout','180','db'],{timeout:240000});
+    this.dump(d,file);
+  }
   async stop(d) {
     this.dc(d,['stop','--timeout','45','tunnel']);
     this.dc(d,['stop','--timeout','45','app','worker'],{timeout:100000});
@@ -202,8 +217,9 @@ export class Machine {
     ensure(resuming||m.generation>this.state.highest,'Stale transfer rejected');
     if(resuming)this.equal(m,this.state.transfer.manifest,'Resumed archive differs from recorded transfer');
     const dir=resuming?this.state.transfer.dir:path.join(this.home,'generations',m.id+'-'+crypto.randomBytes(6).toString('hex'));
-    this.space(this.home,info.entries.reduce((n,e)=>n+e.size,0)*3+1024**3);
     if(!resuming) {
+      // A retry reuses the staged files; do not demand space for a second extraction.
+      this.space(this.home,info.entries.reduce((n,e)=>n+e.size,0)*3+1024**3);
       privateDirectory(dir);extractZip(file,dir,info);
       const source=path.join(this.home,'sources',m.commit);await this.source(m.commit,source);
       this.docker(['image','load','-i',path.join(dir,'images.tar')],{timeout:1800000});
@@ -215,7 +231,7 @@ export class Machine {
       let previous=this.state.active;
       if(!previous&&fs.existsSync(path.join(this.root,'.env.public')))previous=this.deployment();
       if(previous&&this.state.phase!=='handed-off') {
-        this.config(previous);this.dump(previous,path.join(dir,'destination-safety.dump'));
+        this.backupPrevious(previous,path.join(dir,'destination-safety.dump'));
       }
       const next=this.writeDeployment(path.join(dir,'deployment'),c,m,'mytikas-gen-'+m.id);
       next.commit=m.commit;
@@ -272,6 +288,7 @@ export class Machine {
     this.dc(this.state.transfer.next,['down']);
     this.save({phase:'recovery-starting',highest:Math.max(this.state.highest,this.state.transfer.manifest?.generation||0)});
     this.dc(this.state.previous,['up','-d','--no-deps','--wait','--wait-timeout','180','db','app','worker'],{timeout:240000});this.dc(this.state.previous,['up','-d','--no-deps','tunnel']);
+    fs.rmSync(path.join(this.state.previous.root,'.public','machine-handoff.json'),{force:true});
     this.save({phase:'active',active:this.state.previous,transfer:null});
   }
   async failureStop() {
