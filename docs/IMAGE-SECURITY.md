@@ -9,3 +9,5 @@ The initial published image scan found six fixable HIGH findings in the npm pack
 The Debian base scan also reports unfixed advisories, including HIGH/CRITICAL severities. These are deliberately retained for triage; this work does not assert that every reported package advisory is reachable through the application. Native dependencies, vendor applicability and operational exposure require separate review. The public launch is still pending.
 
 Container commands remain `node dist/server.js`, `node dist/worker.js`, `node dist/migrate.js` and the Node admin/health entrypoints. Do not use npm inside the stripped runtime image. Native development still uses npm normally.
+
+The Node 24 base is pinned by digest in both build/runtime stages. Updating it requires a reviewed source change and CI. Commit tags are write-once: publication checks any existing tag and refuses to replace a different image; an identical image reuses the existing digest. Make a new source commit for a changed/rebuilt release rather than overwriting a prior commit tag.

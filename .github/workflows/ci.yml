@@ -213,8 +213,17 @@ jobs:
         run: |
           docker load -i /tmp/mytikas-tested.tar
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
-          docker tag mytikas-tested:latest "ghcr.io/laymer/mytikas:$COMMIT_SHA"
-          docker push "ghcr.io/laymer/mytikas:$COMMIT_SHA"
+          IMAGE_REF="ghcr.io/laymer/mytikas:$COMMIT_SHA"
+          TESTED_ID=$(docker image inspect --format '{{.Id}}' mytikas-tested:latest)
+          if docker manifest inspect "$IMAGE_REF" >/tmp/existing-manifest.json 2>/tmp/manifest-error; then
+            docker pull "$IMAGE_REF"
+            EXISTING_ID=$(docker image inspect --format '{{.Id}}' "$IMAGE_REF")
+            test "$EXISTING_ID" = "$TESTED_ID" || { echo 'Refusing to overwrite an immutable commit tag with a different image'; exit 1; }
+          else
+            grep -Eqi 'manifest unknown|no such manifest|not found' /tmp/manifest-error || { echo 'Registry lookup failed; refusing publication'; exit 1; }
+            docker tag mytikas-tested:latest "$IMAGE_REF"
+            docker push "$IMAGE_REF"
+          fi
           docker inspect --format '{{json .RepoDigests}}' "ghcr.io/laymer/mytikas:$COMMIT_SHA" > image-digest.json
           docker logout ghcr.io
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
