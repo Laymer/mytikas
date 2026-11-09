@@ -1,12 +1,17 @@
 import { $, node, api, bindForm, message } from "./common.js";
+let generation = 0;
 async function renderEmail() {
+  const current = ++generation;
+  const root = $("#workspace");
+  // Retire old token handlers immediately, before asynchronous session setup.
+  root.replaceChildren();
   const fragment = new URLSearchParams(location.hash.slice(1));
   const verification = fragment.get("verify"),
     reset = fragment.get("reset");
   history.replaceState(null, "", location.pathname + location.search);
   await api("/api/auth/me");
-  const root = $("#workspace"),
-    mode = verification
+  if (current !== generation) return;
+  const mode = verification
       ? "verify"
       : reset
         ? "reset"

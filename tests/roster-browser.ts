@@ -198,6 +198,12 @@ try {
   await expect(page.locator("#message")).toContainText("invalid or expired");
   const newToken = await mailToken(h.pool, "correct.browser@example.test");
   await checkpoint();
+  // Same-document fragment navigation must retire the old token's form while
+  // session initialization is still in flight (a slow connection reproduces it).
+  await page.route("**/api/auth/me", async route => {
+    await new Promise(resolve => setTimeout(resolve, 250));
+    await route.continue();
+  });
   await page.goto(h.cfg.origin + "/email.html#verify=" + newToken);
   await page.getByRole("button", { name: "Verify email", exact: true }).click();
   await expect(page.locator("#message")).toContainText("Email verified");
