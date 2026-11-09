@@ -28,6 +28,17 @@ try {
       await page.coverage.startJSCoverage({ resetOnNavigation: false });
     }
   };
+  // Invalid review destinations stay on the account page and do not redirect.
+  await checkpoint();
+  await page.goto(h.cfg.origin + "/admin.html#invalid-review");
+  await expect(page.getByRole("link",{name:"Go to your account"})).toHaveAttribute("href","/account.html");
+  // A freshly loaded API client has no CSRF token and must fail closed.
+  const csrfStatus=await page.evaluate(async()=>{
+    const modulePath="/common.js?csrf-fixture";
+    const {api}=await import(modulePath);
+    try{await api("/api/auth/forgot-password",{email:"csrf@example.test"});return 200;}catch(error){return (error as {status:number}).status;}
+  });
+  assert.equal(csrfStatus,403);
   await checkpoint();
   await page.goto(h.cfg.origin + "/account.html");
   await page.locator("#login-email").fill("admin@example.test");
