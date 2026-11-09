@@ -8,7 +8,7 @@ Initial measurement on Node 24, 2026-11-09:
 | Browser | 93.05% | 93.05% | 100% | 92.71% |
 | Executable Node utilities | 45.12% | 45.12% | 47.05% | 73.26% |
 
-The recovery/error-path follow-up measures 87.00% backend lines/statements and 82.94% branches, plus 97.06% frontend lines/statements, 97.54% branches and 100% named functions locally. The frontend floor is raised to 97.06% lines/statements and 97.5% branches; branch rounding avoids observed V8 denominator variation between equivalent runs. Other floors remain unchanged.
+The recovery/error-path follow-up measures 87.00% backend lines/statements and 82.94% branches, plus 97.06% frontend lines/statements, 97.54% branches and 100% named functions locally. The frontend floor is raised to 97.06% lines/statements and 97.5% branches; branch rounding avoids observed V8 denominator variation between equivalent runs. The entrypoint follow-up measures backend 92.28% lines/statements, 94.73% functions and 83.91% branches, and utilities 45.61% lines/statements, 47.05% functions and 73.68% branches. Floors are raised accordingly, with a small branch-denominator rounding allowance.
 
 These are V8/c8/Istanbul measurements, not a claim of 95% coverage or exhaustive behavioral testing. Browser function coverage counts V8 named function entries; anonymous callbacks are also reflected in executable line/branch ranges. SQL and Bash are tested behaviorally and are not represented by these percentages.
 
@@ -20,9 +20,9 @@ Raw directories are separate for backend, utilities and browser suites. Utility 
 
 Priority gaps toward 95%:
 
-1. P12/P07: web and admin CLI process paths and forced shutdown deadlines. Discord overlapping claims, lease expiry and SIGKILL-after-acceptance recovery now have real database/process tests.
+1. P12/P07: remaining demo and malformed upstream response paths. Real PTY admin bootstrap, password authentication, graceful web shutdown and the forced 30-second shutdown deadline are now exercised. Discord overlapping claims, lease expiry and SIGKILL-after-acceptance recovery now have real database/process tests.
 2. P12/P02: utility process error branches, PostgreSQL tool extraction, native restore execution, secret generator, screenshot/live-smoke entrypoints, and coverage reporters themselves. Separate container/recovery tests exercise some of these without contributing to this coverage group.
 3. P11: frontend error branches, all staff mutation ambiguity paths, comprehensive all-page visual/accessibility checks. Desktop/mobile header and hero pixels now match the original commit exactly, and keyboard form/error behavior is tested. Chromium/Firefox workflows and a narrow two-host HTTPS/mobile/keyboard smoke pass locally; WebKit passes with CI-provisioned OS libraries.
-4. P08: managed-provider deployment and published-image upgrade/rollback rehearsal. Real PostgreSQL tests now verify trusted-CA TLS success, wrong-CA rejection and hostname mismatch, including migrations/readiness over TLS.
+4. P08: managed-provider deployment. Published-image upgrade and rollback have been rehearsed against separately provisioned PostgreSQL with verified TLS and separate owner/runtime credentials. Real PostgreSQL tests now verify trusted-CA TLS success, wrong-CA rejection and hostname mismatch, including migrations/readiness over TLS.
 
 Production dependency audit currently reports zero vulnerabilities. Development coverage dependencies have moderate audit findings; no force/downgrade was applied to hide them. OS image scanning and software inventory are now mandatory CI artifacts; see IMAGE-SECURITY.md for the explicit gate and remaining unfixed base-image findings.

@@ -42,7 +42,9 @@
     "test:recovery:container": "node tests/recovery-container.mjs",
     "test:database:tls": "node --import tsx tests/database-tls.ts",
     "test:worker:races": "node --import tsx tests/worker-races.ts",
-    "test:visual": "node --import tsx tests/visual.ts"
+    "test:visual": "node --import tsx tests/visual.ts",
+    "test:entrypoints": "node --import tsx tests/entrypoints.ts",
+    "test:cloud:rehearsal": "node tests/cloud-rehearsal.mjs"
   },
   "dependencies": {
     "argon2": "^0.44.0",
