@@ -1,3 +1,5 @@
+import { homedir } from 'node:os';
+import { existsSync, readFileSync, mkdirSync, rmdirSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { openSync, closeSync, readSync } from 'node:fs';
@@ -5,7 +7,19 @@ import { dirname, resolve, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
-export function restoreBackup({ archive, database, replace = false, publicProfile = false, connection = process.env.RESTORE_DATABASE_URL }) {
+export function restoreBackup(options) {
+  let lock;
+  if (options.publicProfile) {
+    const home = resolve(homedir(), '.mytikas');
+    mkdirSync(home, { recursive: true, mode: 0o700 });
+    lock = resolve(home, 'operation.lock');
+    try { mkdirSync(lock, { mode: 0o700 }); }
+    catch { throw new Error('Machine operation in progress; public restore blocked.'); }
+  }
+  try { return restoreUnlocked(options); }
+  finally { if (lock) rmdirSync(lock); }
+}
+function restoreUnlocked({ archive, database, replace = false, publicProfile = false, connection = process.env.RESTORE_DATABASE_URL }) {
   if (replace && !database) throw new Error('--replace requires an explicit --database target.');
   const target = database || `mytikas_restore_${randomBytes(6).toString('hex')}`;
   if (!/^[a-z][a-z0-9_]{0,62}$/.test(target) || ['postgres', 'template0', 'template1'].includes(target))
@@ -21,7 +35,13 @@ export function restoreBackup({ archive, database, replace = false, publicProfil
   let prefix = [];
   if (publicProfile) {
     for (const key of Object.keys(env)) if (/^(POSTGRES_|RUNTIME_DATABASE_|DATABASE_|SESSION_|APP_ORIGIN$|PUBLIC_|DISCORD_|MYTIKAS_|DEPLOYMENT_PROFILE$|INGRESS_MODE$|COMPOSE_|PG)/.test(key)) delete env[key];
-    prefix = ['compose', '--project-name', 'mytikas-public', '--env-file', resolve(root, '.env.public'), '-f', resolve(root, 'compose.public.yaml'), 'exec', '-T', 'db'];
+    const machineHome = resolve(homedir(), '.mytikas');
+    const stateFile = resolve(machineHome, 'machine.json');
+    const state = existsSync(stateFile) ? JSON.parse(readFileSync(stateFile, 'utf8')) : null;
+    if ((state && !['active','idle'].includes(state.phase)) || (!state?.active && existsSync(resolve(root, '.public/machine-handoff.json')))) throw new Error('Public restore blocked during or after handoff; use the machine launcher.');
+    const d = state?.active;
+    delete env.DOCKER_HOST; delete env.DOCKER_CONTEXT;
+    prefix = [...(state?.context ? ['--context',state.context] : []), 'compose', '--project-name', d?.project || 'mytikas-public', '--env-file', d?.env || resolve(root, '.env.public'), '-f', d?.compose || resolve(root, 'compose.public.yaml'), 'exec', '-T', 'db'];
   } else {
     if (!connection) throw new Error('Set RESTORE_DATABASE_URL to an administrative connection, or use --public.');
     const url = new URL(connection);

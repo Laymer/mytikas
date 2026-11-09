@@ -46,7 +46,10 @@
     "test:entrypoints": "node --import tsx tests/entrypoints.ts",
     "test:cloud:rehearsal": "node tests/cloud-rehearsal.mjs",
     "cloudflare": "node scripts/cloudflare.mjs",
-    "test:cloudflare": "node tests/cloudflare.mjs"
+    "test:cloudflare": "node tests/cloudflare.mjs",
+    "build:machine": "node scripts/build-machine.mjs",
+    "test:machine": "node tests/machine.mjs && node tests/machine-engine.mjs && node tests/machine-bootstrap.mjs",
+    "test:machine:container": "node tests/machine-container.mjs"
   },
   "dependencies": {
     "argon2": "^0.44.0",

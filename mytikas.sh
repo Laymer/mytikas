@@ -31,12 +31,12 @@ Demo: localhost:8081, project mytikas-demo, .env.demo
 Only demo accounts prints the persistent shared demo password.
 HELP
 }
-(( BASH_VERSINFO[0] >= 4 )) || fail 'Bash 4+ required'
 if [[ ${1:-} == public ]]; then
   shift
   command -v node >/dev/null || fail 'Node.js 24 required'
   exec node "$ROOT/scripts/public.mjs" "$@"
 fi
+(( BASH_VERSINFO[0] >= 4 )) || fail 'Bash 4+ required'
 MODE=normal
 if [[ ${1:-} == --demo ]]; then MODE=demo; shift; fi
 COMMAND=${1:-help}

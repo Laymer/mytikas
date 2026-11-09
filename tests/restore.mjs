@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, mkdir, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -24,5 +24,13 @@ try {
   assert.equal(run([join(directory, 'missing')]).status, 1);
   assert.equal(run([archive, '--replace', '--replace']).status, 1);
   assert.ok(!run([archive]).stderr.includes('secret'));
+  const home = join(directory, 'home');
+  await mkdir(join(home,'.mytikas'),{recursive:true});
+  await writeFile(join(home,'.mytikas/machine.json'),JSON.stringify({phase:'handed-off'}));
+  const publicRun = () => spawnSync(process.execPath,['scripts/restore.mjs',archive,'--public'],{encoding:'utf8',env:{...process.env,HOME:home}});
+  assert.match(publicRun().stderr,/blocked during or after handoff/);
+  await assert.rejects(access(join(home,'.mytikas/operation.lock')));
+  await mkdir(join(home,'.mytikas/operation.lock'));
+  assert.match(publicRun().stderr,/operation in progress/);
   console.log('Restore argument, archive and destructive-target guards passed.');
 } finally { await rm(directory, { recursive: true, force: true }); }
