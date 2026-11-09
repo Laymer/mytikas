@@ -302,10 +302,21 @@ try {
   await mobile.locator("#login-password").fill(PASS);
   await mobile.route("**/api/auth/login", route => route.fulfill({ status: 401, contentType: "application/json", body: '{"error":"Expired"}' }));
   await mobile.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(mobile.locator("#message")).toContainText("session has expired");
+  await expect(mobile.locator("#message")).toHaveText("Email or password is incorrect.");
   await expect(mobile.getByRole("button", { name: "Sign in", exact: true })).toBeEnabled();
   await expect(mobile.locator("#login-email")).toHaveValue("lost-response@example.test");
   await mobile.unroute("**/api/auth/login");
+  // A protected request still explains an expired or missing authenticated session.
+  const expiredSession = await mobile.evaluate(async () => {
+    const modulePath = "/common.js";
+    const { api } = await import(modulePath);
+    try { await api("/api/application"); return null; }
+    catch (error) { return { status: (error as { status: number }).status, message: (error as Error).message }; }
+  });
+  assert.deepEqual(expiredSession, {
+    status: 401,
+    message: "Your session has expired. Sign in again to continue.",
+  });
   await checkpoint(mobile);
   await mobile.route("**/api/runtime", route => route.fulfill({ contentType: "application/json", body: JSON.stringify({ mode: "demo", publicSiteOrigin: h.cfg.origin }) }));
   await mobile.reload();

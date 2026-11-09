@@ -39,7 +39,9 @@ export async function api(path, body) {
   }
   if (!res.ok) {
     const error = new Error(res.status === 401
-      ? "Your session has expired. Sign in again to continue."
+      ? path === "/api/auth/login"
+        ? "Email or password is incorrect."
+        : "Your session has expired. Sign in again to continue."
       : data.error || "The service could not complete the request. Please try again later.");
     error.status = res.status;
     error.uncertain = body !== undefined && res.status >= 500;
