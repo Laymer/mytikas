@@ -1,5 +1,6 @@
 // Isolated round trip: real images, PostgreSQL dumps/restores, volumes, grants and health.
 // The connector is replaced by a sleeping local process; no real tunnel or webhook is used.
+import { recoveryFixture } from './recovery-fixture.mjs';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,7 +10,7 @@ import { Machine } from '../scripts/machine/core.mjs';
 import { inspectZip } from '../scripts/machine/archive.mjs';
 const root=fs.mkdtempSync(join(tmpdir(),'mytikas-handoff-container-'));
 const repo=resolve('.'),runID=randomBytes(6).toString('hex'),projects=new Map();
-const c={EMAIL_OUTBOX_KEY:'12'.repeat(32),SMTP_HOST:'smtp.invalid',SMTP_PORT:'587',SMTP_USER:'',SMTP_PASSWORD:'',EMAIL_FROM:'guild@example.test',POSTGRES_PASSWORD:'a'.repeat(64),RUNTIME_DATABASE_PASSWORD:'b'.repeat(64),SESSION_SECRET:'c'.repeat(96),PUBLIC_UID:'501',PUBLIC_GID:'20',DISCORD_WEBHOOK_URL:'',tunnelToken:'d'.repeat(100)};
+const c={EMAIL_OUTBOX_KEY:'12'.repeat(32),SMTP_HOST:'smtp.invalid',SMTP_PORT:'587',SMTP_USER:'fixture-user',SMTP_PASSWORD:'literal $ ${SMTP_USER} $$ # spaces " quotes \\ and \' apostrophe' ,EMAIL_FROM:'guild@example.test',POSTGRES_PASSWORD:'a'.repeat(64),RUNTIME_DATABASE_PASSWORD:'b'.repeat(64),SESSION_SECRET:'c'.repeat(96),PUBLIC_UID:'501',PUBLIC_GID:'20',DISCORD_WEBHOOK_URL:'',tunnelToken:'d'.repeat(100)};
 const originalFetch=globalThis.fetch;
 globalThis.fetch=async url=>{assert.equal(url,'https://app.mytikas.monster/api/health');return {ok:true};};
 class Isolated extends Machine {
@@ -17,7 +18,7 @@ class Isolated extends Machine {
   writeDeployment(dir,c,m,project) {
     assert(project.startsWith('mytikas-'));const d=super.writeDeployment(dir,c,m,project);
     const compose=JSON.parse(fs.readFileSync(d.compose));
-    compose.services.tunnel={image:m.images.db,init:true,entrypoint:['sleep','infinity'],network_mode:'service:app'};
+    compose.services.tunnel={image:m.images.db,user:'501:20',init:true,entrypoint:['sleep','infinity'],network_mode:'service:app'};
     fs.writeFileSync(d.compose,JSON.stringify(compose));projects.set(d.project,{machine:this,d});return d;
   }
   async publicCheck() {
@@ -42,6 +43,7 @@ async function initial(machine,name,password=c.POSTGRES_PASSWORD) {
     INSERT INTO discord_jobs(submission_id,status,attempts,available_at,lease_token,lease_until) VALUES ('00000000-0000-0000-0000-000000000003','PENDING',3,'2100-01-01','00000000-0000-0000-0000-000000000004','2100-01-02');
     INSERT INTO events(application_id,actor_id,to_status,method) VALUES ('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000001','APPROVED','MANUAL');
     INSERT INTO role_events(user_id,actor_id,old_role,new_role) VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000001','USER','ADMIN');`);
+  machine.sql(d,recoveryFixture(c.EMAIL_OUTBOX_KEY));
   machine.dc(d,['up','-d','--no-deps','--wait','--wait-timeout','180','app','worker'],{timeout:240000});machine.dc(d,['up','-d','--no-deps','tunnel']);return d;
 }
 try {
@@ -49,22 +51,38 @@ try {
   await a.prepare();await b.prepare();
   const oldA=await initial(a,'source'),oldB=await initial(b,'destination','f'.repeat(64));
   await a.migrate();assert.equal(a.state.phase,'handed-off');assert.equal(a.dc(oldA,['ps','-a','-q']),'');
-  const first=a.state.export.target;assert.equal(inspectZip(first).configuration.PUBLIC_UID,'501');
+  const first=a.state.export.target;assert.equal(inspectZip(first).configuration.SMTP_PASSWORD,c.SMTP_PASSWORD);assert.equal(inspectZip(first).configuration.PUBLIC_UID,'501');
   // Exercise import over a deliberately stopped destination while retaining its volume.
   b.dc(oldB,['down']);
   await b.import(first);assert.equal(b.state.phase,'active');
-  assert.equal(b.sql(b.state.active,"SELECT email || ':' || role || ':' || password_hash FROM users"),`source@fixture.test:ADMIN:${oldA.passwordHash}`);
-  assert.equal(b.sql(oldB,'SELECT email FROM users'),'destination@fixture.test');
+  assert.equal(b.sql(b.state.active,"SELECT email || ':' || role || ':' || password_hash FROM users WHERE role='ADMIN'"),`source@fixture.test:ADMIN:${oldA.passwordHash}`);
+  assert.equal(b.sql(oldB,"SELECT email FROM users WHERE role='ADMIN'"),'destination@fixture.test');
   assert.equal(b.sql(b.state.active,"SELECT count(*) FROM sessions WHERE sid='preserved-session'"),'1');
   assert(fs.existsSync(join(b.state.transfer.dir,'destination-safety.dump')));
   const before=b.state.active;await b.import(first);assert.deepEqual(b.state.active,before);
   await b.migrate();assert.equal(b.state.highest,2);await a.import(b.state.export.target);assert.equal(a.state.phase,'active');assert.equal(a.state.highest,2);
-  assert.equal(a.sql(a.state.active,"SELECT email || ':' || role || ':' || password_hash FROM users"),`source@fixture.test:ADMIN:${oldA.passwordHash}`);
+  assert.equal(a.sql(a.state.active,"SELECT email || ':' || role || ':' || password_hash FROM users WHERE role='ADMIN'"),`source@fixture.test:ADMIN:${oldA.passwordHash}`);
   assert.equal(a.sql(a.state.active,"SELECT count(*) FROM sessions WHERE sid='preserved-session'"),'1');
   assert.equal(a.sql(a.state.active,"SELECT attempts || ':' || lease_token FROM discord_jobs"),'3:00000000-0000-0000-0000-000000000004');
-  assert.equal(a.sql(a.state.active,'SELECT count(*) FROM events'),'1');
+  assert.equal(a.sql(a.state.active,'SELECT count(*) FROM events'),'4');
   assert.equal(a.sql(a.state.active,'SELECT count(*) FROM role_events'),'1');
   a.dc(a.state.active,['exec','-T','app','node','-e',`(async()=>{const headers={'x-forwarded-proto':'https','x-forwarded-for':'192.0.2.2'};const me=await fetch('http://127.0.0.1:8080/api/auth/me',{headers});const token=(await me.json()).csrfToken;const cookie=me.headers.get('set-cookie').split(';')[0];const login=await fetch('http://127.0.0.1:8080/api/auth/login',{method:'POST',headers:{...headers,origin:'https://app.mytikas.monster','content-type':'application/json','x-csrf-token':token,cookie},body:JSON.stringify({email:'source@fixture.test',password:'fixture-password-long'})});if(!login.ok||(await login.json()).user.role!=='ADMIN')process.exit(1)})()`]);
+  a.dc(a.state.active,['stop','--timeout','45','worker']);
+  a.dc(a.state.active,['run','--rm','-T','--no-deps','app','node','--input-type=module','-e',`
+    import assert from 'node:assert/strict';
+    import {createPool} from './dist/db.js';
+    import {config} from './dist/config.js';
+    import {emailTick,captureTransport} from './dist/email.js';
+    const cfg=config(),pool=createPool(cfg.databaseUrl),capture=captureTransport();
+    try {
+      await pool.query("UPDATE email_jobs SET available_at=now() WHERE status='PENDING'");
+      await emailTick(pool,cfg,capture.send);
+      assert.equal(capture.messages.length,1);
+      assert.equal(capture.messages[0].subject,'Recovery fixture');
+      assert.equal((await pool.query("SELECT count(*) FROM roster_slots WHERE application_id='10000000-0000-0000-0000-000000000003'")).rows[0].count,'0');
+      assert.equal((await pool.query("SELECT auth_version FROM users WHERE email='fixture.recovery@example.test'")).rows[0].auth_version,7);
+    } finally {await pool.end();}
+  `]);
   await assert.rejects(()=>a.import(first),/Stale/);
   console.log('Isolated WSL-style → Mac-style → return restore passed; previous data, administrator, password hash and session preserved. Actual macOS bootstrap remains a manual acceptance test.');
 } finally {
