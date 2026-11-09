@@ -13,7 +13,7 @@ export const createPool = (connectionString: string) => {
   const url = new URL(connectionString);
   if ([...url.searchParams.keys()].some(key => key.startsWith("ssl")))
     throw new Error("Configure database TLS with DATABASE_TLS and DATABASE_CA_FILE, not URL SSL parameters");
-  return new pg.Pool({
+  const pool = new pg.Pool({
     connectionString,
     max: positive("DATABASE_POOL_MAX", 10),
     connectionTimeoutMillis: positive("DATABASE_CONNECT_TIMEOUT_MS", 5000),
@@ -23,6 +23,10 @@ export const createPool = (connectionString: string) => {
       ...(process.env.DATABASE_CA_FILE ? { ca: readFileSync(process.env.DATABASE_CA_FILE, "utf8") } : {}),
     } : false,
   });
+  // Idle clients can fail during a database restart. Without a listener pg emits
+  // an unhandled error (including its client object) and terminates the process.
+  pool.on("error", () => console.error(JSON.stringify({ event: "database_idle_connection_lost" })));
+  return pool;
 };
 export type Pool = pg.Pool;
 export async function transaction<T>(

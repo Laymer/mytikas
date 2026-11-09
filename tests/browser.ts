@@ -219,6 +219,12 @@ try {
   console.log(
     "✓ Browser: account lookup, role assignment, moderator panel without admin tools",
   );
+  // Staff accounts without an application render their account page.
+  await checkpoint(staff);
+  await staff.goto(h.cfg.origin + "/account.html");
+  await expect(staff.getByRole("heading", { name: "Your staff account" })).toBeVisible();
+  await expect(staff.getByRole("link", { name: "Admin panel" })).toBeVisible();
+  await checkpoint(staff);
   const mobile = await browser.newPage({
     viewport: { width: 390, height: 844 },
   });
@@ -256,7 +262,49 @@ try {
   await mobile.locator("#login-password").fill(PASS);
   await mobile.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(mobile.locator(".tag")).toHaveText("SUBMITTED");
+  // Authenticated applicants cannot follow staff review destinations.
+  await checkpoint(mobile);
+  await mobile.goto(`${h.cfg.origin}/admin.html#${application.id}`);
+  await expect(mobile.getByRole("link", { name: "Go to your account" })).toBeVisible();
+  await expect(mobile.locator("#detail")).toHaveCount(0);
+  await checkpoint(mobile);
+  await mobile.getByRole("link", { name: "Go to your account" }).click();
+  await expect(mobile.locator(".tag")).toHaveText("SUBMITTED");
+  await expect(mobile).toHaveURL(/account\.html/);
+  // A failed staff/applicant action preserves its current state and blocks replay.
+  await mobile.route("**/api/auth/logout", route => route.fulfill({ status: 503, contentType: "application/json", body: "{}" }));
   await mobile.getByRole("button", { name: "Sign out" }).click();
+  await expect(mobile.locator("#message")).toContainText("service could not complete");
+  await expect(mobile.getByRole("button", { name: "Sign out" })).toBeDisabled();
+  await expect(mobile.getByRole("link", { name: "Reload current state before trying again" })).toBeVisible();
+  await mobile.unroute("**/api/auth/logout");
+  await checkpoint(mobile);
+  await mobile.reload();
+  await expect(mobile.locator(".tag")).toHaveText("SUBMITTED");
+  await mobile.getByRole("button", { name: "Sign out" }).click();
+  await expect(mobile.locator("#signup")).toBeVisible();
+  await mobile.locator("#signup-email").fill("lost-response@example.test");
+  await mobile.locator("#signup-password").fill(PASS);
+  await mobile.getByLabel("Full in-game name").fill("Lost Response");
+  await mobile.getByLabel("Why do you want to join?").fill("Duplicate requests must preserve this text.");
+  await mobile.getByRole("checkbox").check();
+  await mobile.unroute("**/api/auth/register");
+  await mobile.getByRole("button", { name: "Create account & apply" }).click();
+  await expect(mobile.locator("#message")).toContainText("already registered");
+  await expect(mobile.getByRole("button", { name: "Create account & apply" })).toBeEnabled();
+  await expect(mobile.getByLabel("Why do you want to join?")).toHaveValue("Duplicate requests must preserve this text.");
+  await mobile.locator("#login-email").fill("lost-response@example.test");
+  await mobile.locator("#login-password").fill(PASS);
+  await mobile.route("**/api/auth/login", route => route.fulfill({ status: 401, contentType: "application/json", body: '{"error":"Expired"}' }));
+  await mobile.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(mobile.locator("#message")).toContainText("session has expired");
+  await expect(mobile.getByRole("button", { name: "Sign in", exact: true })).toBeEnabled();
+  await expect(mobile.locator("#login-email")).toHaveValue("lost-response@example.test");
+  await mobile.unroute("**/api/auth/login");
+  await checkpoint(mobile);
+  await mobile.route("**/api/runtime", route => route.fulfill({ contentType: "application/json", body: JSON.stringify({ mode: "demo", publicSiteOrigin: h.cfg.origin }) }));
+  await mobile.reload();
+  await expect(mobile.locator(".demo-banner")).toContainText("Fictional accounts and armory fixtures");
   await expect(mobile.locator("#signup")).toBeVisible();
   await checkpoint(mobile);
   await mobile.route("**/api/auth/me", route => route.fulfill({ status: 502, contentType: "text/html", body: "<html>Tunnel unavailable</html>" }));
