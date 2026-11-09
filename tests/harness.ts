@@ -1,3 +1,4 @@
+import { unseal } from "../src/email.js";
 import EmbeddedPostgres from "embedded-postgres";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -90,6 +91,7 @@ export async function harness() {
   const verify = (name: string) => verifyMembership(name, transport);
   const cfg: Config = {
     databaseUrl,
+    emailOutboxKey: "12".repeat(32),
     sessionSecret: "test-only-secret-".repeat(4),
     origin: "http://127.0.0.1",
     port: 0,
@@ -102,16 +104,17 @@ export async function harness() {
   const hash = await hashPassword(PASS);
   const admin = (
     await pool.query(
-      "INSERT INTO users(email,password_hash,role) VALUES ('admin@example.test',$1,'ADMIN') RETURNING id",
+      "INSERT INTO users(email,password_hash,role,activation_exempt) VALUES ('admin@example.test',$1,'ADMIN',true) RETURNING id",
       [hash],
     )
   ).rows[0];
   const moderator = (
     await pool.query(
-      "INSERT INTO users(email,password_hash,role) VALUES ('mod@example.test',$1,'MODERATOR') RETURNING id",
+      "INSERT INTO users(email,password_hash,role,activation_exempt) VALUES ('mod@example.test',$1,'MODERATOR',true) RETURNING id",
       [hash],
     )
   ).rows[0];
+  testPools.set(cfg.origin,()=>pool);
   return {
     get pool() {
       return pool;
@@ -140,6 +143,12 @@ export async function harness() {
       await rm(directory, { recursive: true, force: true });
     },
   };
+}
+const testPools = new Map<string,()=>ReturnType<typeof createPool>>();
+export async function mailToken(pool: ReturnType<typeof createPool>,address: string,purpose='verify') {
+ const {rows:[job]}=await pool.query("SELECT j.payload FROM email_jobs j JOIN users u ON u.id=j.user_id JOIN email_tokens t ON t.id=j.token_id WHERE u.email=$1 AND t.purpose=$2 AND j.status='PENDING' ORDER BY j.created_at DESC LIMIT 1",[address.trim().toLowerCase(),purpose.toUpperCase()]);
+ if(!job) throw new Error('No captured token');
+ return unseal(job.payload,"12".repeat(32)).text.match(/#(?:verify|reset)=([a-f0-9]{64})/)![1]!;
 }
 export class Client {
   cookie = "";
@@ -183,7 +192,7 @@ export class Client {
   async signup(name: string, address?: string, extra = {}) {
     await this.init();
     const { data: rules } = await this.request("/api/rules");
-    return this.request("/api/auth/register", {
+    const registered = await this.request("/api/auth/register", {
       email: address || name.toLowerCase().replace(" ", ".") + "@example.test",
       password: PASS,
       characterName: name,
@@ -192,6 +201,16 @@ export class Client {
       acceptRules: true,
       ...extra,
     });
+    // Legacy workflow suites use this helper for a fully activated applicant.
+    // New activation tests call request(register) directly to test the pending state.
+    if(registered.status!==201) return registered;
+    const pool=testPools.get(this.origin)?.();
+    if(!pool) return registered;
+    const email=(address || name.toLowerCase().replace(" ", ".")+"@example.test").trim().toLowerCase();
+    const verified=await this.request('/api/auth/verify-email',{token:await mailToken(pool,email)});
+    if(verified.status!==200) throw new Error('Test verification failed: '+JSON.stringify(verified.data));
+    const login=await this.login(email);
+    return {...login,status:201};
   }
   async application() {
     return (await this.request("/api/application")).data;

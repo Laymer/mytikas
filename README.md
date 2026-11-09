@@ -304,3 +304,11 @@ The [published-artifact verification record](docs/VERIFICATION.md) contains the 
 ### Move public hosting between WSL2 and Intel macOS
 
 Use `./mytikas-machine.sh migrate` on the current host, copy its private ZIP and the launcher, then run `./mytikas-machine.sh import /path/to/archive.zip` on the receiver. Reverse those commands with a new export to return. See [machine migration and recovery](docs/MACHINE-MIGRATION.md) for prerequisites, downtime, credential handling, the 4 GiB archive limit and the pending real-Mac acceptance rehearsal.
+
+### Email activation and Raid Roster
+
+New accounts require email confirmation before staff review; existing accounts retain access through an explicit exemption. Sign-in now includes password recovery. See [account and roster instructions](docs/USER-MANUAL.md) and the [email rollout gate](docs/PUBLIC-OPERATIONS.md).
+
+Confirmed members can view persistent 10/20/40-player rosters. Administrators can edit slots and roles, override or refresh classic classes, and remove/restore membership with recorded reasons. Removal clears assigned slots atomically.
+
+Before production deployment, supply SMTP settings and a separate `EMAIL_OUTBOX_KEY`, migrate, and reapply runtime grants. Run `npm run test:activation` and `npm run test:roster:browser` for feature acceptance tests. Real production delivery still requires the documented operator verification.

@@ -8,6 +8,12 @@ x-backend: &backend
     SESSION_SECRET: ${SESSION_SECRET:?Run npm run secrets}
     APP_ORIGIN: ${APP_ORIGIN:-http://localhost:8080}
     PORT: 8080
+    EMAIL_OUTBOX_KEY: ${EMAIL_OUTBOX_KEY:-}
+    SMTP_HOST: ${SMTP_HOST:-}
+    SMTP_PORT: ${SMTP_PORT:-587}
+    SMTP_USER: ${SMTP_USER:-}
+    SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+    EMAIL_FROM: ${EMAIL_FROM:-}
     DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
   restart: unless-stopped
   stop_grace_period: 45s

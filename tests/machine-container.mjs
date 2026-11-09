@@ -9,7 +9,7 @@ import { Machine } from '../scripts/machine/core.mjs';
 import { inspectZip } from '../scripts/machine/archive.mjs';
 const root=fs.mkdtempSync(join(tmpdir(),'mytikas-handoff-container-'));
 const repo=resolve('.'),runID=randomBytes(6).toString('hex'),projects=new Map();
-const c={POSTGRES_PASSWORD:'a'.repeat(64),RUNTIME_DATABASE_PASSWORD:'b'.repeat(64),SESSION_SECRET:'c'.repeat(96),PUBLIC_UID:'501',PUBLIC_GID:'20',DISCORD_WEBHOOK_URL:'',tunnelToken:'d'.repeat(100)};
+const c={EMAIL_OUTBOX_KEY:'12'.repeat(32),SMTP_HOST:'smtp.invalid',SMTP_PORT:'587',SMTP_USER:'',SMTP_PASSWORD:'',EMAIL_FROM:'guild@example.test',POSTGRES_PASSWORD:'a'.repeat(64),RUNTIME_DATABASE_PASSWORD:'b'.repeat(64),SESSION_SECRET:'c'.repeat(96),PUBLIC_UID:'501',PUBLIC_GID:'20',DISCORD_WEBHOOK_URL:'',tunnelToken:'d'.repeat(100)};
 const originalFetch=globalThis.fetch;
 globalThis.fetch=async url=>{assert.equal(url,'https://app.mytikas.monster/api/health');return {ok:true};};
 class Isolated extends Machine {
@@ -36,7 +36,7 @@ async function initial(machine,name,password=c.POSTGRES_PASSWORD) {
   for(const n of ['runtime-grants.sql','public-runtime-role.sql'])machine.docker(['cp',join(repo,'scripts',n),`${id}:/scripts/${n}`]);
   machine.dc(d,['exec','-T','-e','RUNTIME_DATABASE_PASSWORD','db','psql','-X','-q','-U','mytikas_public','-d','mytikas_public','-v','ON_ERROR_STOP=1','-f','/scripts/public-runtime-role.sql'],{env:{...machine.env,RUNTIME_DATABASE_PASSWORD:c.RUNTIME_DATABASE_PASSWORD}});
   const hash=machine.dc(d,['run','--rm','-T','--no-deps','app','node','-e',"require('argon2').hash('fixture-password-long').then(h=>console.log(h))"]);d.passwordHash=hash;
-  machine.sql(d,`INSERT INTO users(id,email,password_hash,role) VALUES ('00000000-0000-0000-0000-000000000001','${name}@fixture.test','${hash}','ADMIN'); INSERT INTO sessions(sid,sess,expire) VALUES ('preserved-session','{"userId":"00000000-0000-0000-0000-000000000001","cookie":{"secure":true}}','2100-01-01');`);
+  machine.sql(d,`INSERT INTO users(id,email,password_hash,role,activation_exempt) VALUES ('00000000-0000-0000-0000-000000000001','${name}@fixture.test','${hash}','ADMIN',true); INSERT INTO sessions(sid,sess,expire) VALUES ('preserved-session','{"userId":"00000000-0000-0000-0000-000000000001","cookie":{"secure":true}}','2100-01-01');`);
   machine.sql(d,`INSERT INTO applications(id,user_id,character_name,character_key,status,next_check_at) VALUES ('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000001','Fixture','fixture','APPROVED','2100-01-01');
     INSERT INTO submissions(id,application_id,revision,character_name,character_key,motivation,rules_id,actor_id) VALUES ('00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000002',1,'Fixture','fixture','Fixture motivation',1,'00000000-0000-0000-0000-000000000001');
     INSERT INTO discord_jobs(submission_id,status,attempts,available_at,lease_token,lease_until) VALUES ('00000000-0000-0000-0000-000000000003','PENDING',3,'2100-01-01','00000000-0000-0000-0000-000000000004','2100-01-02');

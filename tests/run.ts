@@ -56,7 +56,7 @@ try {
     assert.equal(a.application.status, "SUBMITTED");
     assert.equal(a.application.character_key, "alice summit");
     assert.equal(a.submissions.length, 1);
-    assert.equal(a.events.length, 1);
+    assert.equal(a.events.length, 2);
     const {
       rows: [job],
     } = await h.pool.query(
@@ -238,7 +238,7 @@ try {
     const a = await alice.application();
     assert.equal(a.submissions.length, 2);
     assert.notEqual(a.submissions[0].rules_id, a.submissions[1].rules_id);
-    assert.equal(a.events.length, 4);
+    assert.equal(a.events.length, 5);
     assert.equal(
       a.submissions[0].motivation,
       "I would like to help guild groups.",

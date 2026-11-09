@@ -41,19 +41,21 @@ export async function acceptSubmission(
     ],
   );
   await c.query(
-    "INSERT INTO events(application_id, actor_id, from_status, to_status, method) VALUES ($1,$2,$3,'SUBMITTED','APPLICANT')",
-    [app.id, actor, app.revision === 1 ? null : "REOPENED"],
+    "INSERT INTO events(application_id, actor_id, from_status, to_status, method) VALUES ($1,$2,$3,$4,'APPLICANT')",
+    [app.id, actor, app.revision === 1 ? null : "REOPENED", app.status],
   );
-  await c.query(
-    "INSERT INTO discord_jobs(submission_id,status) VALUES ($1,$2)",
-    [submission.id, notifications ? "PENDING" : "DISABLED"],
-  );
+  if (app.status !== "PENDING_EMAIL")
+    await c.query(
+      "INSERT INTO discord_jobs(submission_id,status) VALUES ($1,$2)",
+      [submission.id, notifications ? "PENDING" : "DISABLED"],
+    );
 }
 export async function detail(pool: Pool, id: string, staff = false) {
   const {
     rows: [app],
   } = await pool.query("SELECT * FROM applications WHERE id=$1", [id]);
-  if (!app) throw new HttpError(404, "Application not found.");
+  if (!app || (staff && app.status === "PENDING_EMAIL"))
+    throw new HttpError(404, "Application not found.");
   const [submissions, events] = await Promise.all([
     pool.query(
       `SELECT s.*, r.content AS rules_content, r.prototype AS rules_prototype FROM submissions s JOIN rules r ON r.id=s.rules_id WHERE s.application_id=$1 ORDER BY s.revision DESC`,
@@ -113,12 +115,18 @@ export async function transition(
     approve: { from: ["SUBMITTED"], to: "APPROVED" },
     reject: { from: ["SUBMITTED", "APPROVED"], to: "REJECTED" },
     reopen: { from: ["REJECTED"], to: "REOPENED" },
+    remove: { from: ["JOINED"], to: "REMOVED" },
+    restore: { from: ["REMOVED"], to: "JOINED" },
     join: { from: ["APPROVED"], to: "JOINED" },
   };
   const spec = actions[action];
   if (!spec) throw new HttpError(400, "Unknown action.");
   return transaction(pool, async (c) => {
-    await assertRole(c, actor);
+    await assertRole(c, actor, ["remove", "restore"].includes(action));
+    if (["remove", "restore"].includes(action)) {
+      if (!note.trim()) throw new HttpError(400, "A reason is required.");
+      await c.query("SELECT pg_advisory_xact_lock(3)");
+    }
     const {
       rows: [app],
     } = await c.query("SELECT * FROM applications WHERE id=$1 FOR UPDATE", [
@@ -130,6 +138,16 @@ export async function transition(
         409,
         "This action is no longer available. Refresh the application.",
       );
+    if (action === "remove") {
+      await c.query(
+        "UPDATE rosters SET revision=revision+1 WHERE size IN (SELECT roster_size FROM roster_slots WHERE application_id=$1)",
+        [id],
+      );
+      await c.query(
+        "UPDATE roster_slots SET application_id=NULL WHERE application_id=$1",
+        [id],
+      );
+    }
     await c.query(
       `UPDATE applications SET status=$2, updated_at=now(), next_check_at=CASE WHEN $2='APPROVED' THEN now() ELSE NULL END,
     check_result=CASE WHEN check_token IS NOT NULL THEN 'CANCELLED' ELSE check_result END,

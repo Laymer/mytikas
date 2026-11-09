@@ -51,7 +51,7 @@ try {
   if (managed && command === 'init') throw new Error('Managed deployment secrets are preserved by import.');
   if (command === 'init') {
     mkdirSync(resolve(root, '.public'), { recursive: true, mode: 0o700 });
-    createPrivate(envFile, `POSTGRES_PASSWORD=${randomBytes(32).toString('hex')}\nSESSION_SECRET=${randomBytes(48).toString('hex')}\nDISCORD_WEBHOOK_URL=\nPUBLIC_UID=${process.getuid()}\nPUBLIC_GID=${process.getgid()}\n`);
+    createPrivate(envFile, `POSTGRES_PASSWORD=${randomBytes(32).toString('hex')}\nSESSION_SECRET=${randomBytes(48).toString('hex')}\nEMAIL_OUTBOX_KEY=${randomBytes(32).toString('hex')}\nSMTP_HOST=\nSMTP_PORT=587\nSMTP_USER=\nSMTP_PASSWORD=\nEMAIL_FROM=\nDISCORD_WEBHOOK_URL=\nPUBLIC_UID=${process.getuid()}\nPUBLIC_GID=${process.getgid()}\n`);
     privateFile(envFile);
     const existing = readFileSync(envFile, 'utf8');
     if (!/^\s*(?:export\s+)?RUNTIME_DATABASE_PASSWORD\s*=/m.test(existing))

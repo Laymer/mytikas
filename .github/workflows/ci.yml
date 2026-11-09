@@ -65,6 +65,10 @@ jobs:
         env:
           BROWSER: ${{ matrix.browser }}
           FRONTEND_COVERAGE: ${{ matrix.browser == 'chromium' && '1' || '0' }}
+      - run: npm run test:roster:browser
+        env:
+          BROWSER: ${{ matrix.browser }}
+          FRONTEND_COVERAGE: ${{ matrix.browser == 'chromium' && '1' || '0' }}
       - if: matrix.browser == 'chromium'
         run: node --import tsx tests/two-host.ts
       - if: matrix.browser == 'chromium'

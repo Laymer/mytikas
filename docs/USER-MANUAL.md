@@ -187,3 +187,23 @@ has changed the examples, reset the demo before regenerating screenshots.
 The public landing stays at `https://mytikas.monster`; account and staff pages use `https://app.mytikas.monster` once cutover is completed. Availability depends on the laptop, Docker/WSL and tunnel being running. The landing remains readable during an outage and offers a status retry. Public deployment is not yet externally accepted; consult the implementation tracker before sharing it.
 
 Registration sends the character name, motivation, accepted rules version, revision reference and review link to private staff Discord. It does not send email, passwords or sessions. Password recovery is unavailable. Discord review links preserve their application destination through staff login. If a submission response is lost, the page checks authoritative state; if the outcome remains uncertain it preserves your text and disables another attempt until you sign in/reload to confirm. It does not automatically repeat a submission.
+
+## Email confirmation and recovery
+
+New registrations reserve the character and save the accepted rules version. Check your inbox (including spam) and open the confirmation link, then press **Verify email**. Only then does the application enter staff review and queue its Discord notification. Sign in afterward. Existing accounts retain access through an explicit activation exemption; this is not recorded as email verification.
+
+The confirmation-pending screen offers **Resend verification** and **Correct email**. Correction requires the original address and signup password and preserves your application. Replacement links invalidate earlier links. Wait at least 60 seconds between requests; requests are also limited per address and IP. Verification links expire after 24 hours.
+
+Use **Forgot password?** on sign-in to request a reset. The acknowledgement is the same for all addresses. Reset links expire after 30 minutes. Enter and confirm a password of 12–128 characters. A successful reset signs out every existing session and sends a password-change notification. Resetting a pending account does not verify its email.
+
+## Raid Roster
+
+Confirmed members and administrators see **Raid Roster** in account and staff navigation. Moderators need confirmed membership and have read-only roster access. The public landing navigation is unchanged.
+
+The 10, 20 and 40 player rosters always contain five columns. On phones, scroll within each roster to see the remaining columns. Blue means tank, green healer and red DPS; every role also has a text label. Character names use class colors; unknown classes remain assignable.
+
+Administrators open **Edit Raid Rosters** in the admin panel. Activate a slot with a click or Enter, choose a member (or **Empty slot**) and a role, then **Apply to draft**. **Save** commits that complete roster; **Cancel** reloads that roster. Members can occupy one slot per roster and appear in all three rosters. If another administrator saves or removes a member, a stale save is rejected while your draft remains visible. Cancel to reload before editing again.
+
+Under **Member classes**, select a manual class or **Use armory class** and save. **Refresh armory class** queues an independent fetch; it never changes membership or overwrites manual overrides.
+
+For a joined member, administrators can enter a review note and select **Remove membership**. This immediately removes roster access and clears all assigned slots. **Restore membership** requires another reason and restores access with slots remaining empty. Both actions remain in immutable application history. Removing an administrator's membership does not change their administrative role.

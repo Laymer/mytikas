@@ -3,6 +3,7 @@
  * We never set ignoreHTTPSErrors or globally disable certificate verification.
  * OpenSSL independently verifies both SAN names against the generated CA.
  */
+import {activateBrowser} from "./browser-activation.js";
 import { chromium, expect, type Browser } from "@playwright/test";
 import { createServer as httpsServer, type Server as HttpsServer } from "node:https";
 import { createServer, request, type Server } from "node:http";
@@ -91,6 +92,8 @@ try {
   await page.getByLabel("Why do you want to join?").fill("Joining through two real HTTPS hosts.");
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Create account & apply" }).click();
+  await expect(page).toHaveURL(/email.html/);
+  await activateBrowser(page,h.pool,cfg.origin,"https-applicant@example.test");
   await expect(page.locator(".tag")).toHaveText("SUBMITTED");
   const cookie = (await context.cookies()).find(cookie => cookie.name === "mytikas.sid");
   assert.ok(cookie);

@@ -1,3 +1,11 @@
+import {
+  issueToken,
+  consumeToken,
+  queueMail,
+  emailLimit,
+  cancelTokens,
+} from "./email.js";
+import { installRosters, rosterAccess } from "./rosters.js";
 import { schemaReady } from "./migrate.js";
 import { isIP } from "node:net";
 import express, {
@@ -9,7 +17,12 @@ import session from "express-session";
 import connectPg from "connect-pg-simple";
 import helmet from "helmet";
 import argon2 from "argon2";
-import { randomBytes, randomUUID, timingSafeEqual, createHash } from "node:crypto";
+import {
+  randomBytes,
+  randomUUID,
+  timingSafeEqual,
+  createHash,
+} from "node:crypto";
 import { resolve } from "node:path";
 import type { Config } from "./config.js";
 import { transaction, type Pool } from "./db.js";
@@ -32,6 +45,7 @@ import { checkMembership, verifyMembership, type Verify } from "./armory.js";
 declare module "express-session" {
   interface SessionData {
     userId?: string;
+    authVersion?: number;
     csrf?: string;
   }
 }
@@ -48,10 +62,16 @@ const publicUser = (u: any): User => ({
   role: u.role,
 });
 export const isLoopbackIngress = (address: string) =>
-  address === "127.0.0.1" || address === "::1" || address === "::ffff:127.0.0.1";
+  address === "127.0.0.1" ||
+  address === "::1" ||
+  address === "::ffff:127.0.0.1";
 export function clientIdentity(req: Request, cfg: Config): string {
   const peer = req.socket.remoteAddress || "unknown";
-  if (cfg.deploymentProfile === "public" && cfg.ingressMode === "cloudflare-loopback" && isLoopbackIngress(peer)) {
+  if (
+    cfg.deploymentProfile === "public" &&
+    cfg.ingressMode === "cloudflare-loopback" &&
+    isLoopbackIngress(peer)
+  ) {
     const client = req.get("cf-connecting-ip");
     if (client && isIP(client)) return client;
   }
@@ -76,18 +96,29 @@ export function createApp(
       const requestId = randomUUID();
       const started = Date.now();
       res.setHeader("X-Request-ID", requestId);
-      res.on("finish", () => console.log(JSON.stringify({
-        event: "request", requestId, method: req.method,
-        status: res.statusCode, durationMs: Date.now() - started,
-      })));
+      res.on("finish", () =>
+        console.log(
+          JSON.stringify({
+            event: "request",
+            requestId,
+            method: req.method,
+            status: res.statusCode,
+            durationMs: Date.now() - started,
+          }),
+        ),
+      );
       next();
     });
   }
   const cookieName = cfg.demo ? "mytikas.demo.sid" : "mytikas.sid";
   app.disable("x-powered-by");
-  app.set("trust proxy", cfg.ingressMode && cfg.ingressMode !== "none"
-    ? (address: string, hop: number) => hop === 0 && isLoopbackIngress(address)
-    : false);
+  app.set(
+    "trust proxy",
+    cfg.ingressMode && cfg.ingressMode !== "none"
+      ? (address: string, hop: number) =>
+          hop === 0 && isLoopbackIngress(address)
+      : false,
+  );
   app.use(
     helmet({
       contentSecurityPolicy: {
@@ -102,14 +133,16 @@ export function createApp(
     res.set("Cache-Control", "no-store");
     next();
   });
-  app.get("/api/runtime", (_req, res) => res.json({
-    mode: cfg.demo ? "demo" : "normal",
-    publicSiteOrigin: cfg.publicSiteOrigin || cfg.origin,
-  }));
+  app.get("/api/runtime", (_req, res) =>
+    res.json({
+      mode: cfg.demo ? "demo" : "normal",
+      publicSiteOrigin: cfg.publicSiteOrigin || cfg.origin,
+    }),
+  );
   app.get("/api/live", (_req, res) => res.json({ live: true }));
   const ready = async (_req: Request, res: Response) => {
     try {
-      if (!await schemaReady(pool)) throw new Error("Schema is not ready");
+      if (!(await schemaReady(pool))) throw new Error("Schema is not ready");
       res.json({ ready: true });
     } catch {
       res.status(503).json({ ready: false });
@@ -117,12 +150,16 @@ export function createApp(
   };
   app.get("/api/health", ready);
   // Deliberately mounted before session middleware: this endpoint never creates sessions.
-  app.get("/api/availability", (req, res, next) => {
-    res.vary("Origin");
-    if (req.get("origin") === cfg.publicSiteOrigin)
-      res.set("Access-Control-Allow-Origin", cfg.publicSiteOrigin!);
-    next();
-  }, ready);
+  app.get(
+    "/api/availability",
+    (req, res, next) => {
+      res.vary("Origin");
+      if (req.get("origin") === cfg.publicSiteOrigin)
+        res.set("Access-Control-Allow-Origin", cfg.publicSiteOrigin!);
+      next();
+    },
+    ready,
+  );
   app.use("/api", express.json({ limit: "128kb" }));
   const Store = connectPg(session);
   const sessionStore = new Store({
@@ -150,10 +187,15 @@ export function createApp(
     if (req.session.userId) {
       const {
         rows: [u],
-      } = await pool.query("SELECT id,email,role FROM users WHERE id=$1", [
+      } = await pool.query("SELECT * FROM users WHERE id=$1", [
         req.session.userId,
       ]);
-      if (u) req.user = publicUser(u);
+      if (
+        u &&
+        (u.email_verified_at || u.activation_exempt) &&
+        u.auth_version === (req.session.authVersion || 0)
+      )
+        req.user = publicUser(u);
     }
     if (!["GET", "HEAD", "OPTIONS"].includes(req.method)) {
       const origin = req.get("origin");
@@ -201,7 +243,7 @@ export function createApp(
         : "";
     const keys = [
       ["ip:" + clientIdentity(req, cfg), 40],
-      ["email:" + account, 12],
+      ...(account ? [["email:" + account, 12] as const] : []),
     ] as const;
     for (const [raw, max] of keys) {
       const key = createHash("sha256").update(raw).digest("hex");
@@ -223,20 +265,27 @@ export function createApp(
     }
     next();
   };
-  async function signedIn(req: Request, u: User) {
+  async function signedIn(req: Request, u: User, version: number) {
     await new Promise<void>((ok, no) =>
       req.session.regenerate((e) => (e ? no(e) : ok())),
     );
     req.session.userId = u.id;
+    req.session.authVersion = version;
     req.session.csrf = randomBytes(32).toString("hex");
     await new Promise<void>((ok, no) =>
       req.session.save((e) => (e ? no(e) : ok())),
     );
     return { user: u, csrfToken: req.session.csrf };
   }
-  app.get("/api/auth/me", (req, res) => {
+  app.get("/api/auth/me", async (req, res) => {
     req.session.csrf ||= randomBytes(32).toString("hex");
-    res.json({ user: req.user || null, csrfToken: req.session.csrf });
+    res.json({
+      user: req.user || null,
+      csrfToken: req.session.csrf,
+      activated: !!req.user,
+      canViewRosters: req.user ? await rosterAccess(pool, req.user.id) : false,
+      canEditRosters: req.user?.role === "ADMIN",
+    });
   });
   app.get("/api/rules", async (_req, res) =>
     res.json(await currentRules(pool)),
@@ -246,6 +295,20 @@ export function createApp(
     const address = email(req.body.email),
       pass = password(req.body.password),
       input = applicationInput(req.body);
+    if (
+      (
+        await pool.query(
+          "SELECT 1 FROM users WHERE email=$1 UNION ALL SELECT 1 FROM applications WHERE character_key=$2",
+          [address, input.key],
+        )
+      ).rowCount
+    )
+      throw new HttpError(
+        409,
+        "That email or character is already registered.",
+      );
+    if (!(await emailLimit(pool, address, clientIdentity(req, cfg))))
+      throw new HttpError(429, "Please wait before requesting another email.");
     const hash = await hashPassword(pass);
     const u = await transaction(pool, async (c) => {
       const {
@@ -257,7 +320,7 @@ export function createApp(
       const {
         rows: [application],
       } = await c.query(
-        `INSERT INTO applications(user_id,character_name,character_key,status) VALUES ($1,$2,$3,'SUBMITTED') RETURNING *`,
+        `INSERT INTO applications(user_id,character_name,character_key,status) VALUES ($1,$2,$3,'PENDING_EMAIL') RETURNING *`,
         [user.id, input.name, input.key],
       );
       await acceptSubmission(
@@ -267,9 +330,10 @@ export function createApp(
         user.id,
         !!cfg.discordWebhook,
       );
+      await issueToken(c, cfg, user, "VERIFY");
       return publicUser(user);
     });
-    res.status(201).json(await signedIn(req, u));
+    res.status(201).json({ pendingEmail: true });
   });
   // Fixed dummy hash keeps missing-account checks on the password hashing path.
   const dummyHash = hashPassword(randomBytes(32).toString("hex"));
@@ -288,7 +352,130 @@ export function createApp(
     );
     if (!u || !valid)
       throw new HttpError(401, "Email or password is incorrect.");
-    res.json(await signedIn(req, publicUser(u)));
+    if (!u.email_verified_at && !u.activation_exempt)
+      throw new HttpError(
+        403,
+        "Verify your email before signing in. Use the confirmation-pending page to resend or correct your email.",
+      );
+    // Keep the version read with the verified hash. A racing reset makes this session stale.
+    res.json(await signedIn(req, publicUser(u), u.auth_version));
+  });
+  const acknowledgement = {
+    message:
+      "If the address is eligible, an email will arrive shortly. Check your inbox and spam folder.",
+  };
+  for (const [route, purpose] of [
+    ["resend-verification", "VERIFY"],
+    ["forgot-password", "RESET"],
+  ] as const) {
+    app.post(`/api/auth/${route}`, async (req, res) => {
+      const address = email(req.body.email);
+      if (await emailLimit(pool, address, clientIdentity(req, cfg)))
+        await transaction(pool, async (c) => {
+          const {
+            rows: [u],
+          } = await c.query("SELECT * FROM users WHERE email=$1 FOR UPDATE", [
+            address,
+          ]);
+          if (
+            u &&
+            (purpose === "RESET" ||
+              (!u.email_verified_at && !u.activation_exempt))
+          )
+            await issueToken(c, cfg, u, purpose);
+        });
+      res.json(acknowledgement);
+    });
+  }
+  app.post("/api/auth/correct-pending-email", authLimit, async (req, res) => {
+    const original = email(req.body.email),
+      replacement = email(req.body.newEmail);
+    if (
+      !(await emailLimit(
+        pool,
+        [original, replacement],
+        clientIdentity(req, cfg),
+      ))
+    )
+      throw new HttpError(429, "Please wait before requesting another email.");
+    await transaction(pool, async (c) => {
+      const {
+        rows: [u],
+      } = await c.query("SELECT * FROM users WHERE email=$1 FOR UPDATE", [
+        original,
+      ]);
+      const pass =
+        typeof req.body.password === "string" && req.body.password.length <= 128
+          ? req.body.password
+          : "";
+      const valid = await argon2.verify(
+        u?.password_hash || (await dummyHash),
+        pass,
+      );
+      if (!u || !valid || u.email_verified_at || u.activation_exempt)
+        throw new HttpError(
+          400,
+          "Unable to correct this registration with those credentials.",
+        );
+      await cancelTokens(c, u.id, "RESET");
+      await c.query("UPDATE users SET email=$2 WHERE id=$1", [
+        u.id,
+        replacement,
+      ]);
+      await issueToken(c, cfg, { ...u, email: replacement }, "VERIFY");
+    });
+    res.json(acknowledgement);
+  });
+  app.post("/api/auth/verify-email", authLimit, async (req, res) => {
+    await transaction(pool, async (c) => {
+      const u = await consumeToken(c, req.body.token, "VERIFY");
+      await c.query("UPDATE users SET email_verified_at=now() WHERE id=$1", [
+        u.id,
+      ]);
+      const {
+        rows: [a],
+      } = await c.query(
+        "UPDATE applications SET status='SUBMITTED',updated_at=now() WHERE user_id=$1 AND status='PENDING_EMAIL' RETURNING id,revision",
+        [u.id],
+      );
+      if (a) {
+        await c.query(
+          "INSERT INTO events(application_id,actor_id,from_status,to_status,method) VALUES($1,$2,'PENDING_EMAIL','SUBMITTED','EMAIL_VERIFIED')",
+          [a.id, u.id],
+        );
+        await c.query(
+          "INSERT INTO discord_jobs(submission_id,status) SELECT id,$3 FROM submissions WHERE application_id=$1 AND revision=$2 ON CONFLICT(submission_id) DO NOTHING",
+          [a.id, a.revision, cfg.discordWebhook ? "PENDING" : "DISABLED"],
+        );
+      }
+    });
+    res.json({ message: "Email verified. Sign in to continue." });
+  });
+  app.post("/api/auth/reset-password", authLimit, async (req, res) => {
+    const pass = password(req.body.password);
+    if (pass !== req.body.confirmPassword)
+      throw new HttpError(400, "Passwords do not match.");
+    const hash = await hashPassword(pass);
+    await transaction(pool, async (c) => {
+      const u = await consumeToken(c, req.body.token, "RESET");
+      await c.query(
+        "UPDATE users SET password_hash=$2,auth_version=auth_version+1 WHERE id=$1",
+        [u.id, hash],
+      );
+      await c.query("DELETE FROM sessions WHERE sess->>'userId'=$1", [u.id]);
+      await queueMail(
+        c,
+        cfg,
+        u.id,
+        {
+          to: u.email,
+          subject: "Mytikas: password changed",
+          text: "Your password was changed. Sign in with your new password. If you did not make this change, request another password reset immediately.",
+        },
+        new Date(Date.now() + 86400000),
+      );
+    });
+    res.json({ message: "Password changed. Sign in again." });
   });
   app.post("/api/auth/logout", authenticated, async (req, res) => {
     await new Promise<void>((ok, no) =>
@@ -358,6 +545,7 @@ export function createApp(
     await checkMembership(pool, id, verify, false, req.user!.id);
     res.json(await detail(pool, id));
   });
+  installRosters(app, pool);
   app.use("/api/admin", authenticated, staff);
   app.get("/api/admin/applications", async (req, res) => {
     const status =
@@ -371,6 +559,7 @@ export function createApp(
         "REJECTED",
         "REOPENED",
         "JOINED",
+        "REMOVED",
       ].includes(status)
     )
       throw new HttpError(400, "Invalid status filter.");
@@ -380,7 +569,7 @@ export function createApp(
     );
     const { rows } = await pool.query(
       `SELECT a.id,a.character_name,a.status,a.revision,a.updated_at,a.check_result FROM applications a
-   WHERE $1='ALL' OR ($1='PENDING' AND a.status IN ('SUBMITTED','APPROVED','REOPENED')) OR a.status=$1 ORDER BY a.updated_at DESC,a.id LIMIT 51 OFFSET $2`,
+   WHERE a.status<>'PENDING_EMAIL' AND ($1='ALL' OR ($1='PENDING' AND a.status IN ('SUBMITTED','APPROVED','REOPENED')) OR a.status=$1) ORDER BY a.updated_at DESC,a.id LIMIT 51 OFFSET $2`,
       [status, offset],
     );
     res.json({

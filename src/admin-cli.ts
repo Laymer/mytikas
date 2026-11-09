@@ -42,7 +42,7 @@ try {
         "An admin already exists. Use the admin panel to grant additional roles.",
       );
     await c.query(
-      "INSERT INTO users(email,password_hash,role) VALUES ($1,$2,'ADMIN')",
+      "INSERT INTO users(email,password_hash,role,activation_exempt) VALUES ($1,$2,'ADMIN',true)",
       [address, hash],
     );
   });
