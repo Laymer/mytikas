@@ -8,6 +8,10 @@ GitHub Pages API reports the old repository uses workflow publishing, custom dom
 
 Before changing nameservers, export the complete registrar DNS zone and record existing TTLs, A/AAAA/CNAME, MX, SPF/DKIM/DMARC, verification TXT and any other subdomains. Keep this export private. In Cloudflare add the zone and compare every imported record against that export, especially mail and GitHub ownership verification. Confirm DNSSEC/DS state at the registrar; follow the registrar's coordinated DNSSEC migration procedure. Do not publish arbitrary nameserver values: use the pair assigned to this specific zone. Verify resolution from multiple resolvers after propagation. Keep apex/`www` Pages records DNS-only.
 
+## Automated Cloudflare preparation
+
+Use [Cloudflare automation](CLOUDFLARE-AUTOMATION.md) to authorize once and create the pending zone, dedicated tunnel and application CNAME. The command preserves existing Cloudflare records, stores tokens privately, and leaves registrar delegation separate until the complete DNS export and DNSSEC review are ready.
+
 ## Application preparation
 
 Follow [public operations](PUBLIC-OPERATIONS.md). Create a named Cloudflare Tunnel with public route `app.mytikas.monster` to `http://127.0.0.1:8080`. No Cloudflare Access login policy should intercept visitors. Store its token privately in `.public/tunnel-token`; never paste it into chat or a command line. Create the private staff Discord webhook and put the official URL in `.env.public`. Start with `node scripts/public.mjs up`, bootstrap admin interactively, and publish reviewed guild rules through the website before inviting applicants. Treat default prototype rules as unreviewed.

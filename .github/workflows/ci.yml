@@ -20,6 +20,7 @@ jobs:
       - run: for file in public/*.js scripts/*.mjs; do node --check "$file" || exit 1; done
       - run: npm run test:helper
       - run: npm run test:public
+      - run: npm run test:cloudflare
       - run: npm run test:landing
       - run: node tests/restore.mjs
       - run: node tests/check-coverage.mjs
