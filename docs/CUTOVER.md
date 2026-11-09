@@ -1,6 +1,6 @@
 # DNS and public acceptance runbook
 
-No domain or nameserver changes have been made by this implementation. The existing landing site remains on `Laymer/olympus-mytikas`. The new repository is public and protected; enable its Pages deployment only after mandatory CI passes.
+No domain or nameserver changes have been made by this implementation. The existing landing site remains on `Laymer/olympus-mytikas`. The new repository is public and protected. Its landing preview is deployed at https://laymer.github.io/mytikas/ after mandatory CI; the custom-domain transfer remains pending.
 
 ## Observed rollback state (2026-11-09)
 
