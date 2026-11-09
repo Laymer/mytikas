@@ -1,6 +1,6 @@
 x-backend: &backend
   build: .
-  image: mytikas-public
+  image: ${MYTIKAS_IMAGE:-mytikas-public}
   init: true
   environment: &environment
     NODE_ENV: production
@@ -12,6 +12,12 @@ x-backend: &backend
     APP_ORIGIN: https://app.mytikas.monster
     PUBLIC_SITE_ORIGIN: https://mytikas.monster
     PORT: 8080
+    EMAIL_OUTBOX_KEY: ${EMAIL_OUTBOX_KEY:-}
+    SMTP_HOST: ${SMTP_HOST:-}
+    SMTP_PORT: ${SMTP_PORT:-587}
+    SMTP_USER: ${SMTP_USER:-}
+    SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+    EMAIL_FROM: ${EMAIL_FROM:-}
     DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
   restart: unless-stopped
   stop_grace_period: 45s

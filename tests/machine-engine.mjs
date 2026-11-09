@@ -31,7 +31,7 @@ class Engine extends Machine {
     }
     if(args[0]==='compose') {
       const command=args[7],tail=args.slice(8);
-      if(command==='config'&&tail.includes('json'))return JSON.stringify({services:{db:{volumes:[{type:'volume',source:'data',target:'/var/lib/postgresql'}]}},volumes:{data:{name:'previous-data'}}});
+      if(command==='config'&&tail.includes('json'))return JSON.stringify({services:{app:{image:images.app,environment:{DATABASE_URL:`postgres://mytikas_runtime:${c.RUNTIME_DATABASE_PASSWORD}@db:5432/mytikas_public`,SESSION_SECRET:c.SESSION_SECRET,DISCORD_WEBHOOK_URL:''}},tunnel:{user:`${c.PUBLIC_UID}:${c.PUBLIC_GID}`},db:{environment:{POSTGRES_PASSWORD:c.POSTGRES_PASSWORD},volumes:[{type:'volume',source:'data',target:'/var/lib/postgresql'}]}},volumes:{data:{name:'previous-data'}}});
       if(command==='ps'&&tail.at(-1)==='db'&&this.dbRemoved)return '';
       if(command==='ps')return ({app:'a',worker:'b',db:'c',tunnel:'d'}[tail.at(-1)]||'a').repeat(64);
       if(command==='up'&&tail.includes('tunnel')&&this.failTunnel)throw new Error('Recovery tunnel failed');

@@ -1,5 +1,12 @@
 # Verified implementation artifacts — 2026-11-09
 
+## Current rollout state — 9 November 2026
+
+The [production rollout and acceptance runbook](PRODUCTION-ROLLOUT.md) is the current operational reference. Public Pages/HTTPS and the application tunnel are already cut over; administrators already exist. Production remains pre-004; email activation/rosters require a staged migration and private mail setup. Earlier claims below about pending DNS/Pages, unavailable Docker, missing administrators or unimplemented recovery are historical and superseded. Live mail, reviewed rules/private webhook, actual-backup restore proof, separate-network/device checks and operator acceptance remain open. Do not announce recruitment or tag an accepted release yet.
+
+## Historical implementation records (superseded where noted)
+
+
 This is implementation verification, **not external showcase acceptance**. Cloudflare, the live webhook, custom-domain cutover and P16 acceptance remain pending.
 
 - Public protected repository: https://github.com/Laymer/mytikas
@@ -34,3 +41,13 @@ The existing `mytikas.monster` Pages binding remains on `Laymer/olympus-mytikas`
 The actual cloud Compose configuration was rehearsed locally with the earlier published digest, this hardened published digest, then the earlier digest again. Separately provisioned PostgreSQL required verified CA/hostname TLS and separate owner/runtime roles. Accounts, password authentication, sessions, immutable submissions, history, migration checksums and worker health survived upgrade and rollback. This verifies a same-schema rollback boundary, not arbitrary schema reversal or a managed-provider deployment.
 
 [PR #6](https://github.com/Laymer/mytikas/pull/6) merged as `08ba63d9170811f724926815a8033cdf2e690134` after independent review and [passing required CI](https://github.com/Laymer/mytikas/actions/runs/42601083300). It adds public non-owner database roles with secret-preserving provisioning, exact common-image checks, cloud Compose upgrade/rollback against the candidate image, and real administrator/web process tests. Local measured coverage is backend 92.28% lines/statements, 94.73% functions, 83.91% branches; browser 97.06%, 97.06%, 100%, 97.54%; utilities 45.61%, 45.61%, 47.05%, 73.68%. Increased floors passed CI. Main protection was rechecked: strict current ci-required, PRs, administrator enforcement and resolved conversations remain active; force pushes and deletion are disabled.
+
+## Email activation, recovery and Raid Roster implementation
+
+Local verification for migration 004 covers pending registration, correction, original rules acceptance, concurrent single-use verification, reset replay/expiry and session revocation (including racing login), address/IP throttles, encrypted email jobs, lease recovery and mandatory SMTP TLS. Roster checks cover all three seeded layouts, permissions, duplicate assignment, conflicts, removal races, restoration, class identity validation and persistent overrides. Runtime grants and production dependency audit pass.
+
+Chromium and Firefox acceptance tests pass, including keyboard slot editing, preserved drafts after conflicts, per-roster cancellation, mobile scrolling, read-only views and password reset. HTTPS two-host activation and original landing-page pixel checks pass. Local WebKit requires missing host libraries; the required CI job installs them. The public container test, PostgreSQL backup/restore drill, machine-transfer round trip and cloud upgrade/snapshot rollback rehearsal pass with isolated credentials and transports.
+
+The existing immutable-base coverage gate was retained. Production SMTP credentials, a verified sender, the persistent outbox key and real verification/reset delivery remain operator rollout inputs; no live mail delivery or production rollout is claimed by these tests.
+
+PR #12 implementation commit `75db98b` passed the complete pull-request CI run [42653088604](https://github.com/Laymer/mytikas/actions/runs/42653088604), including Chromium, Firefox, WebKit, immutable-base coverage, container recovery/transfer/cloud rehearsal, and image security. An earlier push run exposed variability near the frontend branch floor; additional missing-CSRF and invalid-review-destination browser checks raise local branch coverage to 98.85% while retaining the 97.5% floor. Local final measurements: backend lines 94.68%, frontend lines 98.19%, utilities lines 75.12%. Production delivery acceptance remains separate.

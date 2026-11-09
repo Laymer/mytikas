@@ -71,3 +71,11 @@ docker compose --project-name mytikas-demo --env-file .env.demo -f compose.yaml 
 ```
 
 Then resume with `./mytikas.sh up` or `./mytikas.sh demo up`. The one-shot flag is not saved. Prefixing the helper with `ADOPT_MIGRATION_CHECKSUMS=1` is insufficient because Compose does not forward that ambient variable. Fresh public databases need no adoption. A recorded non-null checksum mismatch always fails, even when adoption is enabled; investigate instead of rewriting migration files.
+
+## Email and roster state
+
+Migration 004 tables (`email_tokens`, `email_jobs`, `email_limits`, `class_jobs`, `rosters`, `roster_slots`) are included in full database dumps. Preserve `EMAIL_OUTBOX_KEY` separately with the protected environment secrets, alongside SMTP settings. The machine transfer allowlist includes these settings. Losing the key makes pending mail unreadable; cancel affected jobs and request new links only after installing a new key. Never include decrypted payloads in recovery logs.
+
+Restore the database, matching application version and original outbox key together, then reapply runtime grants. Expired leases recover automatically and expired link payloads are discarded. SMTP acknowledgement can be lost during a crash, so duplicate delivery is possible; consumed tokens cannot be reused. Restore testing must verify activation exemptions, session versions, membership history, roster revisions and cleared assignments, in addition to the existing application checks. Keep backups encrypted and access-controlled: restored snapshots may contain old token jobs and passwords.
+
+Migration 004 changes the schema contract. Rolling back only the image to a pre-004 version is unsupported: its readiness check rejects the additional migration. Quiesce writers and retain a pre-upgrade database snapshot before rollout. Rollback requires restoring that snapshot with the matching old image, grants and secrets; changes made after the snapshot would be lost. Prefer a forward fix when new registrations or roster changes have already been accepted. The cloud rehearsal now verifies this explicit snapshot-based rollback against the previous published image.

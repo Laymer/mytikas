@@ -6,6 +6,10 @@ See the [illustrated user manual](docs/USER-MANUAL.md) for applicant, staff, and
 
 A self-contained Olympus Mytikas recruitment prototype: Node.js 24, TypeScript, Express 5, plain browser JavaScript, and PostgreSQL 18. The summit artwork, crest, styling, and complete chronicle were copied from the neighboring `olympus-mytikas/site` frontend. There is no runtime dependency on that repository.
 
+## Current rollout state — 9 November 2026
+
+The [production rollout and acceptance runbook](docs/PRODUCTION-ROLLOUT.md) is the current operational reference. Public Pages/HTTPS and the application tunnel are already cut over; administrators already exist. Production remains pre-004; email activation/rosters require a staged migration and private mail setup. Earlier claims below about pending DNS/Pages, unavailable Docker, missing administrators or unimplemented recovery are historical and superseded. Live mail, reviewed rules/private webhook, actual-backup restore proof, separate-network/device checks and operator acceptance remain open. Do not announce recruitment or tag an accepted release yet.
+
 ## Start locally
 
 Install Node.js 24 and enable Docker Desktop's WSL integration for this distribution. Both commands must succeed before starting the stack:
@@ -150,7 +154,7 @@ For native development against your own separately provisioned PostgreSQL 18 ins
 - Interactive first-admin creation verified with hidden password input and no guild application; secret generation verified for private permissions and overwrite protection.
 - Chromium browser checks passed for combined signup, required acceptance/counter, moderation, reopening/resubmission, rule publication, joining, role management, and mobile layout. No uncaught page errors.
 - Live armory check on 2026-11-08 returned HTTP 200 for **Xaryu Forever**. Parsed region `us`, ruleset `pvp`, guild **Phase Nine**; result `GUILD_MISMATCH`, as expected. Successful automatic joining was demonstrated using the identified fixtures, not asserted against this live profile.
-- Docker Compose was unavailable and the Docker daemon unreachable in the supplied WSL environment. Container build/startup and Compose restart persistence remain unverified. After enabling Docker Desktop WSL integration, run the startup steps above, create an application, run `docker compose down` followed by `docker compose up -d`, and verify the same account/session, rules and history remain.
+- Historical environment limitation, now superseded: Docker/Compose, container startup/persistence and recovery passed the linked CI and later local checks. Actual production snapshot recovery remains a rollout gate.
 
 Public deployment to `mytikas.monster`, domain/TLS setup, email verification/reset, Discord login, alternate characters, in-game invitation automation, and ongoing member monitoring are deferred.
 
@@ -291,7 +295,7 @@ isolated fixture transports; live Blizzard/Discord integration was not exercised
 
 ## Public prototype deployment
 
-The intended public landing URL is **https://mytikas.monster**, with accounts and staff pages at **https://app.mytikas.monster**. The domain cutover and external showcase acceptance are still pending; the existing landing remains in place.
+The intended public landing URL is **https://mytikas.monster**, with accounts and staff pages at **https://app.mytikas.monster**. The domain cutover is complete; live feature acceptance remains pending.
 
 The public deployment uses an isolated database and Cloudflare Tunnel, with no app/database host ports. Start setup with `node scripts/public.mjs init`, then follow [public laptop operations](docs/PUBLIC-OPERATIONS.md), [DNS cutover](docs/CUTOVER.md), and [backup/recovery](docs/RECOVERY.md). Normal local and seeded demo commands remain available. Password reset and email verification are not implemented. Registration/application details are sent to the private staff Discord channel; email, passwords and session information are excluded.
 
@@ -304,3 +308,11 @@ The [published-artifact verification record](docs/VERIFICATION.md) contains the 
 ### Move public hosting between WSL2 and Intel macOS
 
 Use `./mytikas-machine.sh migrate` on the current host, copy its private ZIP and the launcher, then run `./mytikas-machine.sh import /path/to/archive.zip` on the receiver. Reverse those commands with a new export to return. See [machine migration and recovery](docs/MACHINE-MIGRATION.md) for prerequisites, downtime, credential handling, the 4 GiB archive limit and the pending real-Mac acceptance rehearsal.
+
+### Email activation and Raid Roster
+
+New accounts require email confirmation before staff review; existing accounts retain access through an explicit exemption. Sign-in now includes password recovery. See [account and roster instructions](docs/USER-MANUAL.md) and the [email rollout gate](docs/PUBLIC-OPERATIONS.md).
+
+Confirmed members can view persistent 10/20/40-player rosters. Administrators can edit slots and roles, override or refresh classic classes, and remove/restore membership with recorded reasons. Removal clears assigned slots atomically.
+
+Before production deployment, supply SMTP settings and a separate `EMAIL_OUTBOX_KEY`, migrate, and reapply runtime grants. Run `npm run test:activation` and `npm run test:roster:browser` for feature acceptance tests. Real production delivery still requires the documented operator verification.

@@ -1,3 +1,4 @@
+import { renderRosters, rosterNavigation } from "./roster.js";
 import {
   $,
   node,
@@ -14,7 +15,9 @@ let user,
   offset = 0,
   filter = "PENDING";
 async function render() {
-  ({ user } = await api("/api/auth/me"));
+  const me = await api("/api/auth/me");
+  ({ user } = me);
+  rosterNavigation(me);
   const root = $("#workspace");
   root.replaceChildren();
   if (!user || !["ADMIN", "MODERATOR"].includes(user.role)) {
@@ -23,7 +26,9 @@ async function render() {
     );
     const a = node("a", "Go to your account", "button");
     const destination = reviewDestination(location.pathname + location.hash);
-    a.href = "/account.html" + (destination ? `?returnTo=${encodeURIComponent(destination)}` : "");
+    a.href =
+      "/account.html" +
+      (destination ? `?returnTo=${encodeURIComponent(destination)}` : "");
     root.append(a);
     return;
   }
@@ -41,7 +46,7 @@ async function render() {
     detail = node("div");
   detail.id = "detail";
   queue.innerHTML =
-    '<h2>Applications</h2><label for="status-filter">Show applications</label><select id="status-filter"><option value="PENDING">Pending queue</option><option value="ALL">All applications</option><option>SUBMITTED</option><option>APPROVED</option><option>REJECTED</option><option>REOPENED</option><option>JOINED</option></select><p id="notifications" class="meta"></p><div id="queue"></div><div id="paging" class="toolbar"></div>';
+    '<h2>Applications</h2><label for="status-filter">Show applications</label><select id="status-filter"><option value="PENDING">Pending queue</option><option value="ALL">All applications</option><option>SUBMITTED</option><option>APPROVED</option><option>REJECTED</option><option>REOPENED</option><option>JOINED</option><option>REMOVED</option></select><p id="notifications" class="meta"></p><div id="queue"></div><div id="paging" class="toolbar"></div>';
   columns.append(queue, detail);
   root.append(columns);
   $("#status-filter").value = filter;
@@ -50,7 +55,15 @@ async function render() {
     offset = 0;
     loadQueue().catch((e) => message(e.message));
   });
-  if (user.role === "ADMIN") await adminTools(root);
+  if (user.role === "ADMIN") {
+    await adminTools(root);
+    const rosters = node("details");
+    rosters.append(node("summary", "Edit Raid Rosters"));
+    const content = node("div");
+    rosters.append(content);
+    root.append(rosters);
+    await renderRosters(content, true);
+  }
   await loadQueue();
   if (location.hash) await loadDetail(location.hash.slice(1));
   else
@@ -138,7 +151,8 @@ async function loadDetail(id) {
     ],
     REJECTED: [["reopen", "Reopen"]],
     REOPENED: [],
-    JOINED: [],
+    JOINED: user.role === "ADMIN" ? [["remove", "Remove membership"]] : [],
+    REMOVED: user.role === "ADMIN" ? [["restore", "Restore membership"]] : [],
   };
   for (const [key, title] of available[data.application.status])
     actions.append(

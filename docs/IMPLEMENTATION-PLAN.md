@@ -1,5 +1,12 @@
 # Public prototype implementation tracker
 
+## Current rollout state — 9 November 2026
+
+The [production rollout and acceptance runbook](PRODUCTION-ROLLOUT.md) is the current operational reference. Public Pages/HTTPS and the application tunnel are already cut over; administrators already exist. Production remains pre-004; email activation/rosters require a staged migration and private mail setup. Earlier claims below about pending DNS/Pages, unavailable Docker, missing administrators or unimplemented recovery are historical and superseded. Live mail, reviewed rules/private webhook, actual-backup restore proof, separate-network/device checks and operator acceptance remain open. Do not announce recruitment or tag an accepted release yet.
+
+## Historical implementation records (superseded where noted)
+
+
 Statuses: ⬜ To do · 🚧 In progress · ✅ Done. Existing baseline is locally implemented, not publicly accepted. A checked item requires verification; local edits alone do not satisfy merge or live-evidence requirements.
 
 Architecture: Pages at `https://mytikas.monster`; laptop app/API at `https://app.mytikas.monster` via Cloudflare Tunnel; isolated persistent public PostgreSQL; independent worker. Node 24, current design and lifecycle preserved. See [contracts](ARCHITECTURE.md).
@@ -207,3 +214,5 @@ Cloudflare resources were prepared live on 2026-11-09 using the merged automatio
 The user subsequently changed Namecheap nameservers. At 11:15 UTC, parent delegation and both Cloudflare authoritative servers were verified, with all known website/mail/verification records preserved. Zone is active; Universal SSL is enabled but initial certificate issuance and some resolver caches still prevent public HTTPS acceptance. Registrar delegation is no longer pending; TLS and the remaining P15/P16 checks are. See CUTOVER.md for timestamped evidence and limits.
 
 Cloudflare HTTPS subsequently passed, and the Pages custom-domain binding moved to `mytikas` with HTTPS enforcement and apex/www redirects verified. Live Chromium navigation succeeded. This completes the technical Cloudflare/domain cutover, not P16 account/staff/Discord/Armory acceptance; administrator, reviewed rules and webhook remain pending.
+
+Email activation/password recovery/Raid Roster follow-up adds migration 004, independent email/class worker lanes, account security forms, three persistent role rosters, administrative class overrides and removal/restoration history. Local automated verification is recorded in VERIFICATION.md. Delivery proceeds through a PR and required CI. Production activation remains gated on configured SMTP/sender/outbox key and verified real email flows; the prior public runtime and its secrets have not been changed by implementation tests.

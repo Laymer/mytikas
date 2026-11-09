@@ -1,15 +1,17 @@
 // Isolated round trip: real images, PostgreSQL dumps/restores, volumes, grants and health.
 // The connector is replaced by a sleeping local process; no real tunnel or webhook is used.
+import { recoveryFixture } from './recovery-fixture.mjs';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { Machine } from '../scripts/machine/core.mjs';
 import { inspectZip } from '../scripts/machine/archive.mjs';
 const root=fs.mkdtempSync(join(tmpdir(),'mytikas-handoff-container-'));
 const repo=resolve('.'),runID=randomBytes(6).toString('hex'),projects=new Map();
-const c={POSTGRES_PASSWORD:'a'.repeat(64),RUNTIME_DATABASE_PASSWORD:'b'.repeat(64),SESSION_SECRET:'c'.repeat(96),PUBLIC_UID:'501',PUBLIC_GID:'20',DISCORD_WEBHOOK_URL:'',tunnelToken:'d'.repeat(100)};
+const c={EMAIL_OUTBOX_KEY:'12'.repeat(32),SMTP_HOST:'smtp.invalid',SMTP_PORT:'587',SMTP_USER:'fixture-user',SMTP_PASSWORD:'literal $ ${SMTP_USER} $$ # spaces " quotes \\ and \' apostrophe' ,EMAIL_FROM:'guild@example.test',POSTGRES_PASSWORD:'a'.repeat(64),RUNTIME_DATABASE_PASSWORD:'b'.repeat(64),SESSION_SECRET:'c'.repeat(96),PUBLIC_UID:'501',PUBLIC_GID:'20',DISCORD_WEBHOOK_URL:'',tunnelToken:'d'.repeat(100)};
 const originalFetch=globalThis.fetch;
 globalThis.fetch=async url=>{assert.equal(url,'https://app.mytikas.monster/api/health');return {ok:true};};
 class Isolated extends Machine {
@@ -17,7 +19,7 @@ class Isolated extends Machine {
   writeDeployment(dir,c,m,project) {
     assert(project.startsWith('mytikas-'));const d=super.writeDeployment(dir,c,m,project);
     const compose=JSON.parse(fs.readFileSync(d.compose));
-    compose.services.tunnel={image:m.images.db,init:true,entrypoint:['sleep','infinity'],network_mode:'service:app'};
+    compose.services.tunnel={image:m.images.db,user:'501:20',init:true,entrypoint:['sleep','infinity'],network_mode:'service:app'};
     fs.writeFileSync(d.compose,JSON.stringify(compose));projects.set(d.project,{machine:this,d});return d;
   }
   async publicCheck() {
@@ -25,46 +27,77 @@ class Isolated extends Machine {
     this.dc(this.state.transfer.next,['exec','-T','app','node','-e',`fetch('http://127.0.0.1:8080/api/auth/me',{headers:{'x-forwarded-proto':'https','x-forwarded-for':'192.0.2.1'}}).then(async r=>{let c=r.headers.get('set-cookie')||'';if(!r.ok||!c.includes('Secure')||!c.includes('HttpOnly'))process.exit(1)})`]);
   }
 }
-async function initial(machine,name,password=c.POSTGRES_PASSWORD) {
-  const images={app:JSON.parse(machine.docker(['image','inspect',process.env.MACHINE_TEST_IMAGE||'mytikas-tested:latest']))[0].Id,db:JSON.parse(machine.docker(['image','inspect','postgres:18-bookworm']))[0].Id};images.tunnel=images.db;
-  const d=machine.writeDeployment(join(machine.home,'initial'),{...c,POSTGRES_PASSWORD:password},{images},`mytikas-fixture-${runID}-${name}`);
+async function initial(machine,name,password=c.POSTGRES_PASSWORD,legacy=false) {
+  const images={app:JSON.parse(machine.docker(['image','inspect',legacy?'ghcr.io/laymer/mytikas@sha256:5c4e8aafcd24f1efeb2588b11e7ba3ce9b9cd0de19e3d292a3ebdf9bc6bd91ac':process.env.MACHINE_TEST_IMAGE||'mytikas-tested:latest']))[0].Id,db:JSON.parse(machine.docker(['image','inspect','postgres:18-bookworm']))[0].Id};images.tunnel=images.db;
+  const d=machine.writeDeployment(join(machine.home,'initial'),{...c,...(legacy?{EMAIL_OUTBOX_KEY:'',SMTP_HOST:'',SMTP_USER:'',SMTP_PASSWORD:'',EMAIL_FROM:''}:{}),POSTGRES_PASSWORD:password},{images},`mytikas-fixture-${runID}-${name}`);
   fs.writeFileSync(d.env,fs.readFileSync(d.env,'utf8').replace(/^PUBLIC_UID=.*$/m,'PUBLIC_UID=501').replace(/^PUBLIC_GID=.*$/m,'PUBLIC_GID=20'));
   d.commit=machine.run('git',['-C',repo,'rev-parse','HEAD']);machine.save({active:d,phase:'active'});
   machine.dc(d,['up','-d','--no-deps','--wait','--wait-timeout','180','db'],{timeout:240000});
   machine.dc(d,['run','--rm','-T','--no-deps','-e',`DATABASE_URL=postgres://mytikas_public:${password}@db:5432/mytikas_public`,'app','node','dist/migrate.js']);
   const id=machine.id(d,'db');machine.docker(['exec',id,'mkdir','/scripts']);
   for(const n of ['runtime-grants.sql','public-runtime-role.sql'])machine.docker(['cp',join(repo,'scripts',n),`${id}:/scripts/${n}`]);
+  if(legacy) {
+    const grants=fs.readFileSync(join(repo,'scripts/runtime-grants.sql'),'utf8').replace(', email_tokens, email_jobs, email_limits, class_jobs','').replace(/GRANT SELECT, UPDATE ON rosters, roster_slots[^;]+;/,'');
+    const file=join(machine.home,'pre004-grants.sql');fs.writeFileSync(file,grants);
+    machine.docker(['cp',file,`${id}:/scripts/runtime-grants.sql`]);
+  }
   machine.dc(d,['exec','-T','-e','RUNTIME_DATABASE_PASSWORD','db','psql','-X','-q','-U','mytikas_public','-d','mytikas_public','-v','ON_ERROR_STOP=1','-f','/scripts/public-runtime-role.sql'],{env:{...machine.env,RUNTIME_DATABASE_PASSWORD:c.RUNTIME_DATABASE_PASSWORD}});
   const hash=machine.dc(d,['run','--rm','-T','--no-deps','app','node','-e',"require('argon2').hash('fixture-password-long').then(h=>console.log(h))"]);d.passwordHash=hash;
-  machine.sql(d,`INSERT INTO users(id,email,password_hash,role) VALUES ('00000000-0000-0000-0000-000000000001','${name}@fixture.test','${hash}','ADMIN'); INSERT INTO sessions(sid,sess,expire) VALUES ('preserved-session','{"userId":"00000000-0000-0000-0000-000000000001","cookie":{"secure":true}}','2100-01-01');`);
+  machine.sql(d,`INSERT INTO users(id,email,password_hash,role${legacy?'':',activation_exempt'}) VALUES ('00000000-0000-0000-0000-000000000001','${name}@fixture.test','${hash}','ADMIN'${legacy?'':',true'}); INSERT INTO sessions(sid,sess,expire) VALUES ('preserved-session','{"userId":"00000000-0000-0000-0000-000000000001","cookie":{"secure":true}}','2100-01-01');`);
   machine.sql(d,`INSERT INTO applications(id,user_id,character_name,character_key,status,next_check_at) VALUES ('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000001','Fixture','fixture','APPROVED','2100-01-01');
     INSERT INTO submissions(id,application_id,revision,character_name,character_key,motivation,rules_id,actor_id) VALUES ('00000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-000000000002',1,'Fixture','fixture','Fixture motivation',1,'00000000-0000-0000-0000-000000000001');
     INSERT INTO discord_jobs(submission_id,status,attempts,available_at,lease_token,lease_until) VALUES ('00000000-0000-0000-0000-000000000003','PENDING',3,'2100-01-01','00000000-0000-0000-0000-000000000004','2100-01-02');
     INSERT INTO events(application_id,actor_id,to_status,method) VALUES ('00000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-000000000001','APPROVED','MANUAL');
     INSERT INTO role_events(user_id,actor_id,old_role,new_role) VALUES ('00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-000000000001','USER','ADMIN');`);
+  if(!legacy)machine.sql(d,recoveryFixture(c.EMAIL_OUTBOX_KEY));
   machine.dc(d,['up','-d','--no-deps','--wait','--wait-timeout','180','app','worker'],{timeout:240000});machine.dc(d,['up','-d','--no-deps','tunnel']);return d;
 }
 try {
+  const legacy=new Isolated(join(root,'legacy-host','.mytikas'));await legacy.prepare();
+  legacy.docker(['pull','ghcr.io/laymer/mytikas@sha256:5c4e8aafcd24f1efeb2588b11e7ba3ce9b9cd0de19e3d292a3ebdf9bc6bd91ac'],{timeout:240000});
+  const old=await initial(legacy,'legacy',c.POSTGRES_PASSWORD,true);
+  const helper=command=>spawnSync(process.execPath,[join(repo,'scripts/public.mjs'),command],{env:{...process.env,HOME:join(root,'legacy-host')},encoding:'utf8',timeout:240000});
+  for(const mode of ['stop','up','doctor']) {const result=helper(mode);assert.equal(result.status,0,'Legacy managed '+mode+' failed: '+result.stderr);}
+  legacy.dc(old,['down']);
+  assert.equal(helper('up').status,0,'Removed legacy containers must restart against retained volume');
+  legacy.dc(old,['down','--volumes']);
+  assert.equal(helper('up').status,1,'Missing managed volume must never initialize an empty replacement');
   const a=new Isolated(join(root,'wsl')),b=new Isolated(join(root,'mac'));
   await a.prepare();await b.prepare();
   const oldA=await initial(a,'source'),oldB=await initial(b,'destination','f'.repeat(64));
   await a.migrate();assert.equal(a.state.phase,'handed-off');assert.equal(a.dc(oldA,['ps','-a','-q']),'');
-  const first=a.state.export.target;assert.equal(inspectZip(first).configuration.PUBLIC_UID,'501');
+  const first=a.state.export.target;assert.equal(inspectZip(first).configuration.SMTP_PASSWORD,c.SMTP_PASSWORD);assert.equal(inspectZip(first).configuration.PUBLIC_UID,'501');
   // Exercise import over a deliberately stopped destination while retaining its volume.
   b.dc(oldB,['down']);
   await b.import(first);assert.equal(b.state.phase,'active');
-  assert.equal(b.sql(b.state.active,"SELECT email || ':' || role || ':' || password_hash FROM users"),`source@fixture.test:ADMIN:${oldA.passwordHash}`);
-  assert.equal(b.sql(oldB,'SELECT email FROM users'),'destination@fixture.test');
+  assert.equal(b.sql(b.state.active,"SELECT email || ':' || role || ':' || password_hash FROM users WHERE role='ADMIN'"),`source@fixture.test:ADMIN:${oldA.passwordHash}`);
+  assert.equal(b.sql(oldB,"SELECT email FROM users WHERE role='ADMIN'"),'destination@fixture.test');
   assert.equal(b.sql(b.state.active,"SELECT count(*) FROM sessions WHERE sid='preserved-session'"),'1');
   assert(fs.existsSync(join(b.state.transfer.dir,'destination-safety.dump')));
   const before=b.state.active;await b.import(first);assert.deepEqual(b.state.active,before);
   await b.migrate();assert.equal(b.state.highest,2);await a.import(b.state.export.target);assert.equal(a.state.phase,'active');assert.equal(a.state.highest,2);
-  assert.equal(a.sql(a.state.active,"SELECT email || ':' || role || ':' || password_hash FROM users"),`source@fixture.test:ADMIN:${oldA.passwordHash}`);
+  assert.equal(a.sql(a.state.active,"SELECT email || ':' || role || ':' || password_hash FROM users WHERE role='ADMIN'"),`source@fixture.test:ADMIN:${oldA.passwordHash}`);
   assert.equal(a.sql(a.state.active,"SELECT count(*) FROM sessions WHERE sid='preserved-session'"),'1');
   assert.equal(a.sql(a.state.active,"SELECT attempts || ':' || lease_token FROM discord_jobs"),'3:00000000-0000-0000-0000-000000000004');
-  assert.equal(a.sql(a.state.active,'SELECT count(*) FROM events'),'1');
+  assert.equal(a.sql(a.state.active,'SELECT count(*) FROM events'),'4');
   assert.equal(a.sql(a.state.active,'SELECT count(*) FROM role_events'),'1');
   a.dc(a.state.active,['exec','-T','app','node','-e',`(async()=>{const headers={'x-forwarded-proto':'https','x-forwarded-for':'192.0.2.2'};const me=await fetch('http://127.0.0.1:8080/api/auth/me',{headers});const token=(await me.json()).csrfToken;const cookie=me.headers.get('set-cookie').split(';')[0];const login=await fetch('http://127.0.0.1:8080/api/auth/login',{method:'POST',headers:{...headers,origin:'https://app.mytikas.monster','content-type':'application/json','x-csrf-token':token,cookie},body:JSON.stringify({email:'source@fixture.test',password:'fixture-password-long'})});if(!login.ok||(await login.json()).user.role!=='ADMIN')process.exit(1)})()`]);
+  a.dc(a.state.active,['stop','--timeout','45','worker']);
+  a.dc(a.state.active,['run','--rm','-T','--no-deps','app','node','--input-type=module','-e',`
+    import assert from 'node:assert/strict';
+    import {createPool} from './dist/db.js';
+    import {config} from './dist/config.js';
+    import {emailTick,captureTransport} from './dist/email.js';
+    const cfg=config(),pool=createPool(cfg.databaseUrl),capture=captureTransport();
+    try {
+      await pool.query("UPDATE email_jobs SET available_at=now() WHERE status='PENDING'");
+      await emailTick(pool,cfg,capture.send);
+      assert.equal(capture.messages.length,1);
+      assert.equal(capture.messages[0].subject,'Recovery fixture');
+      assert.equal((await pool.query("SELECT count(*) FROM roster_slots WHERE application_id='10000000-0000-0000-0000-000000000003'")).rows[0].count,'0');
+      assert.equal((await pool.query("SELECT auth_version FROM users WHERE email='fixture.recovery@example.test'")).rows[0].auth_version,7);
+    } finally {await pool.end();}
+  `]);
   await assert.rejects(()=>a.import(first),/Stale/);
   console.log('Isolated WSL-style → Mac-style → return restore passed; previous data, administrator, password hash and session preserved. Actual macOS bootstrap remains a manual acceptance test.');
 } finally {

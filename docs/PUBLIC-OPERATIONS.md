@@ -1,5 +1,7 @@
 # Public laptop operations
 
+For production migration 004, use the [staged rollout and rollback runbook](PRODUCTION-ROLLOUT.md). Ordinary `up` now validates the candidate before interrupting ingress and refuses pending migrations on an existing database. `doctor --smtp` performs a no-send TLS/authentication check. Existing administrators and the completed Pages/tunnel cutover must not be repeated.
+
 The public deployment is a separate Compose project (`mytikas-public`), private environment (`.env.public`) and persistent volume (`mytikas-public_public-postgres-data`). It publishes no host ports. Normal development and the seeded demo keep their existing projects and credentials. Never run the demo seed against this database.
 
 Use a Node.js 24 shell inside WSL2, with Docker Desktop running and WSL integration enabled for that distribution. Keep the checkout in the Linux filesystem so restrictive file permissions work. Laptop sleep, Windows restart, WSL shutdown and Docker shutdown interrupt application access; GitHub Pages remains available. Configure power/startup settings manually if desired; these scripts do not change them.
@@ -41,3 +43,15 @@ The same commands are available through the main helper: `./mytikas.sh public in
 ## Moving hosting between laptops
 
 Use the standalone [two-way machine migration launcher](MACHINE-MIGRATION.md) to preserve the exact runtime and all account/session data. `migrate` leaves the source stopped; `import` stages a fresh destination volume and starts the connector last. Public helpers resolve the managed project and refuse ordinary startup on a handed-off source. A failed import requires explicit recovery or resuming the same archive; helpers never silently restart an old copy.
+
+## Email activation rollout gate
+
+Before deploying migration 004 and the matching web/worker image, provision a verified sender and SMTP credentials. Set `SMTP_HOST`, `SMTP_PORT` (587 for STARTTLS or 465 for implicit TLS), `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM`, and a separately generated `EMAIL_OUTBOX_KEY` (32 random bytes in hex). Both web and worker need the same persistent key. Public/cloud configuration refuses startup without the key, SMTP host and sender. No production credentials are bundled; container tests use isolated `.invalid` SMTP hosts and injected/captured mail.
+
+Store settings in the protected environment/secret store, never source control. Existing environment files are not overwritten by initialization. Update them securely before deploying. Never enable SMTP debug logging or print tokens, email payloads or credentials. Validate sender ownership with the provider and confirm outbound SMTP/TLS availability.
+
+Run the migration as owner, then reapply `scripts/runtime-grants.sql` for the runtime role. Deploy matching app and worker images together. Existing accounts receive `activation_exempt=true`; their verification timestamp remains null. Bootstrap administrators and demo seed accounts also receive explicit exemptions. Existing sessions are treated as version zero until a password reset increments the account version.
+
+After deployment, register a controlled real address. Confirm receipt, verify once, check staff visibility and the single Discord job, then sign in. Request and complete a password reset; confirm the old password and prior sessions fail, the new password succeeds, and the password-change email arrives. Test a resend and expired/replaced link. Real delivery and these two flows are mandatory operator checks before declaring rollout complete; automated capture tests do not establish production deliverability.
+
+Monitor aggregate `email_jobs` status, attempts and lease ages without selecting payloads. A pending job retries at bounded intervals and stops by its expiration. If mail is unavailable, other worker lanes continue. Pending registrations keep their reservations and history; there is no automatic deletion. After fixing delivery, users request replacement links. Do not rotate the outbox key while decryptable jobs remain pending.

@@ -15,6 +15,7 @@ try {
   process.env.PORT = '0';
   assert.throws(config, /PORT/);
   process.env.PORT = '8080';
+  process.env.EMAIL_OUTBOX_KEY='12'.repeat(32);process.env.SMTP_HOST='smtp.example.test';process.env.EMAIL_FROM='guild@example.test';
   process.env.DEPLOYMENT_PROFILE = 'public';
   assert.throws(config, /HTTPS/);
   Object.assign(process.env, { APP_ORIGIN: 'https://app.mytikas.monster', PUBLIC_SITE_ORIGIN: 'https://mytikas.monster', INGRESS_MODE: 'cloudflare-loopback' });

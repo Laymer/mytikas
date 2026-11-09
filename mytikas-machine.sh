@@ -166,7 +166,7 @@ import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 
 const origin='https://app.mytikas.monster';
-const fields=['POSTGRES_PASSWORD','RUNTIME_DATABASE_PASSWORD','SESSION_SECRET','DISCORD_WEBHOOK_URL','PUBLIC_UID','PUBLIC_GID'];
+const fields=['POSTGRES_PASSWORD','RUNTIME_DATABASE_PASSWORD','SESSION_SECRET','DISCORD_WEBHOOK_URL','PUBLIC_UID','PUBLIC_GID','EMAIL_OUTBOX_KEY','SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASSWORD','EMAIL_FROM','MYTIKAS_IMAGE'];
 const ensure=(condition,message)=>{if(!condition)throw new Error(message);};
 export function configuration(text, token) {
   const values={};
@@ -184,6 +184,9 @@ export function validateConfiguration(c) {
   for(const key of ['PUBLIC_UID','PUBLIC_GID'])ensure(/^\d{1,10}$/.test(c[key]),'Invalid host identity');
   ensure(typeof c.DISCORD_WEBHOOK_URL==='string'&&(c.DISCORD_WEBHOOK_URL===''||/^https:\/\/(?:discord.com|discordapp.com)\/api\/webhooks\/[0-9]+\/[A-Za-z0-9_-]+$/.test(c.DISCORD_WEBHOOK_URL)),'Invalid Discord webhook');
   ensure(typeof c.tunnelToken==='string'&&/^[A-Za-z0-9+/=_-]{20,16384}$/.test(c.tunnelToken),'Invalid tunnel connector token');
+  if(c.EMAIL_OUTBOX_KEY)ensure(/^[a-f0-9]{64}$/i.test(c.EMAIL_OUTBOX_KEY),'Invalid email encryption key');
+  for(const key of ['SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASSWORD','EMAIL_FROM'])if(c[key]!==undefined)ensure(typeof c[key]==='string'&&!/[\r\n\0]/.test(c[key]),'Invalid mail configuration');
+  if(c.MYTIKAS_IMAGE)ensure(/^ghcr\.io\/laymer\/mytikas@sha256:[a-f0-9]{64}$/.test(c.MYTIKAS_IMAGE),'Invalid immutable image selection');
   return c;
 }
 export function validateTransfer(info) {
@@ -203,7 +206,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 export class Machine {
   constructor(home=path.join(homedir(),'.mytikas'),root=process.env.MYTIKAS_LAUNCH_DIR||process.cwd()) {
     this.home=home;this.root=root;privateDirectory(home);this.file=path.join(home,'machine.json');this.state=readJSON(this.file,{version:1,highest:0,phase:'idle'});
-    this.env={...process.env};for(const k of Object.keys(this.env))if(/^(DOCKER_HOST$|DOCKER_CONTEXT$|COMPOSE_|POSTGRES_|PG|DATABASE_|RUNTIME_DATABASE_|SESSION_|APP_ORIGIN$|PUBLIC_|DISCORD_|MYTIKAS_|DEPLOYMENT_PROFILE$|INGRESS_MODE$)/.test(k))delete this.env[k];
+    this.env={...process.env};for(const k of Object.keys(this.env))if(/^(DOCKER_HOST$|DOCKER_CONTEXT$|COMPOSE_|POSTGRES_|PG|DATABASE_|RUNTIME_DATABASE_|SMTP_|EMAIL_|SESSION_|APP_ORIGIN$|PUBLIC_|DISCORD_|MYTIKAS_|DEPLOYMENT_PROFILE$|INGRESS_MODE$)/.test(k))delete this.env[k];
   }
   save(patch) {Object.assign(this.state,patch);atomic(this.file,this.state);}
   run(binary,args,options={}) {
@@ -230,8 +233,18 @@ export class Machine {
   id(d,service) {const id=this.dc(d,['ps','-a','-q',service]);ensure(/^[a-f0-9]{12,64}$/.test(id),'Expected one public service container');return id;}
   inspect(id) {return JSON.parse(this.docker(['inspect',id]))[0];}
   config(d) {
-    for(const f of [d.env,d.token])ensure(fs.lstatSync(f).isFile()&&(fs.statSync(f).mode&0o077)===0,'Public configuration/token must be regular private files (600)');
-    return configuration(fs.readFileSync(d.env,'utf8'),fs.readFileSync(d.token,'utf8'));
+    for(const f of [d.env,d.token,...(path.basename(d.compose)==='compose.json'?[d.compose]:[])])ensure(fs.lstatSync(f).isFile()&&(fs.statSync(f).mode&0o077)===0,'Public configuration/token must be regular private files (600)');
+    const resolved=JSON.parse(this.dc(d,['config','--format','json']));
+    // Compose renders dollars escaped for reuse; decode exactly one rendering layer.
+    const literal=values=>Object.fromEntries(Object.entries(values).map(([k,v])=>[k,typeof v==='string'?v.replaceAll('$$','$'):v]));
+    const app=literal(resolved.services.app.environment),db=literal(resolved.services.db.environment);
+    const runtime=new URL(app.DATABASE_URL).password;
+    const [uid,gid]=resolved.services.tunnel.user.split(':');
+    const c={POSTGRES_PASSWORD:db.POSTGRES_PASSWORD,RUNTIME_DATABASE_PASSWORD:decodeURIComponent(runtime),SESSION_SECRET:app.SESSION_SECRET,DISCORD_WEBHOOK_URL:app.DISCORD_WEBHOOK_URL||'',PUBLIC_UID:uid,PUBLIC_GID:gid,tunnelToken:fs.readFileSync(d.token,'utf8').trim()};
+    for(const key of ['EMAIL_OUTBOX_KEY','SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASSWORD','EMAIL_FROM'])if(app[key]!==undefined)c[key]=String(app[key]);
+    if(d.imageSelection)c.MYTIKAS_IMAGE=d.imageSelection;
+    if(resolved.services.app.image.startsWith('ghcr.io/laymer/mytikas@'))c.MYTIKAS_IMAGE=resolved.services.app.image;
+    return validateConfiguration(c);
   }
   space(dir,bytes) {const s=fs.statfsSync(dir);ensure(s.bavail*s.bsize>bytes,'Insufficient host free disk space');}
   engineSpace(image,bytes) {
@@ -278,8 +291,9 @@ export class Machine {
     privateDirectory(dir);privateDirectory(path.join(dir,'.public'));
     const env=path.join(dir,'.env.public'),token=path.join(dir,'.public/tunnel-token');
     const local={...c,PUBLIC_UID:String(process.getuid()),PUBLIC_GID:String(process.getgid())};
-    fs.writeFileSync(env,fields.map(k=>`${k}=${local[k]}`).join('\n')+'\n',{mode:0o600});fs.writeFileSync(token,c.tunnelToken,{mode:0o600});
-    const environment={NODE_ENV:'production',DEPLOYMENT_PROFILE:'public',MYTIKAS_DEMO:'0',INGRESS_MODE:'cloudflare-loopback',DATABASE_URL:`postgres://mytikas_runtime:${c.RUNTIME_DATABASE_PASSWORD}@db:5432/mytikas_public`,SESSION_SECRET:c.SESSION_SECRET,APP_ORIGIN:origin,PUBLIC_SITE_ORIGIN:'https://mytikas.monster',PORT:'8080',DISCORD_WEBHOOK_URL:c.DISCORD_WEBHOOK_URL};
+    // Effective secrets live in the private Compose file, avoiding a second dotenv decoding.
+    fs.writeFileSync(env,`PUBLIC_UID=${local.PUBLIC_UID}\nPUBLIC_GID=${local.PUBLIC_GID}\n`,{mode:0o600});fs.writeFileSync(token,c.tunnelToken,{mode:0o600});
+    const environment={NODE_ENV:'production',DEPLOYMENT_PROFILE:'public',MYTIKAS_DEMO:'0',INGRESS_MODE:'cloudflare-loopback',DATABASE_URL:`postgres://mytikas_runtime:${c.RUNTIME_DATABASE_PASSWORD}@db:5432/mytikas_public`,SESSION_SECRET:c.SESSION_SECRET,APP_ORIGIN:origin,PUBLIC_SITE_ORIGIN:'https://mytikas.monster',PORT:'8080',DISCORD_WEBHOOK_URL:c.DISCORD_WEBHOOK_URL,...Object.fromEntries(['EMAIL_OUTBOX_KEY','SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASSWORD','EMAIL_FROM'].map(k=>[k,c[k]||'']))};
     const backend={image:m.images.app,init:true,environment,restart:'unless-stopped',stop_grace_period:'45s'};
     const compose={services:{
       db:{image:m.images.db,environment:{POSTGRES_USER:'mytikas_public',POSTGRES_DB:'mytikas_public',POSTGRES_PASSWORD:c.POSTGRES_PASSWORD},volumes:['data:/var/lib/postgresql'],restart:'unless-stopped',healthcheck:{test:['CMD-SHELL','pg_isready -U mytikas_public -d mytikas_public'],interval:'3s',timeout:'3s',retries:60}},
@@ -287,7 +301,8 @@ export class Machine {
       worker:{...backend,command:['node','dist/worker.js'],healthcheck:{test:['CMD','node','dist/worker-health.js'],interval:'3s',timeout:'5s',retries:60}},
       tunnel:{image:m.images.tunnel,user:`${local.PUBLIC_UID}:${local.PUBLIC_GID}`,network_mode:'service:app',command:['tunnel','--no-autoupdate','run','--token-file','/run/secrets/tunnel_token'],secrets:['tunnel_token'],read_only:true,cap_drop:['ALL'],security_opt:['no-new-privileges:true'],restart:'unless-stopped'}
     },secrets:{tunnel_token:{file:token}},volumes:{data:{}}};
-    const file=path.join(dir,'compose.json');atomic(file,compose);return {root:dir,project,compose:file,env,token};
+    const escape=v=>typeof v==='string'?v.replaceAll('$',()=>'$$'):Array.isArray(v)?v.map(escape):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).map(([k,x])=>[k,escape(x)])):v;
+    const file=path.join(dir,'compose.json');atomic(file,escape(compose));return {root:dir,project,compose:file,env,token,...(c.MYTIKAS_IMAGE?{imageSelection:c.MYTIKAS_IMAGE}:{})};
   }
   async restore(d,dir,c,source) {
     this.dc(d,['up','-d','--no-deps','--wait','--wait-timeout','180','db'],{timeout:240000});
@@ -327,8 +342,9 @@ export class Machine {
     ensure(containers.app.Image===containers.worker.Image,'App and worker images differ');
     const actualEnv=Object.fromEntries(containers.app.Config.Env.map(v=>{const n=v.indexOf('=');return[v.slice(0,n),v.slice(n+1)];}));
     ensure(actualEnv.DEPLOYMENT_PROFILE==='public'&&actualEnv.APP_ORIGIN===origin&&actualEnv.SESSION_SECRET===c.SESSION_SECRET&&actualEnv.DISCORD_WEBHOOK_URL===c.DISCORD_WEBHOOK_URL&&actualEnv.DATABASE_URL===`postgres://mytikas_runtime:${c.RUNTIME_DATABASE_PASSWORD}@db:5432/mytikas_public`,'Running application configuration differs from public secrets');
+    for(const key of ['EMAIL_OUTBOX_KEY','SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASSWORD','EMAIL_FROM'])ensure((actualEnv[key]||'')===(c[key]||''),'Running mail configuration differs from public secrets');
     const workerEnv=Object.fromEntries(containers.worker.Config.Env.map(v=>{const n=v.indexOf('=');return[v.slice(0,n),v.slice(n+1)];}));
-    for(const key of ['DATABASE_URL','SESSION_SECRET','DISCORD_WEBHOOK_URL','DEPLOYMENT_PROFILE','APP_ORIGIN'])ensure(workerEnv[key]===actualEnv[key],'Worker configuration differs from web runtime');
+    for(const key of ['DATABASE_URL','SESSION_SECRET','DISCORD_WEBHOOK_URL','DEPLOYMENT_PROFILE','APP_ORIGIN','EMAIL_OUTBOX_KEY','SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASSWORD','EMAIL_FROM'])ensure(workerEnv[key]===actualEnv[key],'Worker configuration differs from web runtime');
     ensure(containers.db.Config.Env.includes(`POSTGRES_PASSWORD=${c.POSTGRES_PASSWORD}`),'Running database credentials differ');
     const images=Object.fromEntries(['app','db','tunnel'].map(s=>[s,containers[s].Image]));let size=0;
     for(const image of Object.values(images)) {const i=JSON.parse(this.docker(['image','inspect',image]))[0];ensure(i.Os==='linux'&&i.Architecture==='amd64','Only linux/amd64 images can move between these machines');size+=i.Size;}

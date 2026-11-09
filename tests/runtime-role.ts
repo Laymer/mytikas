@@ -5,7 +5,7 @@ import { createServer } from 'node:http';
 import { createApp } from '../src/app.js';
 import { createPool } from '../src/db.js';
 import { cleanupTick, tick } from '../src/worker.js';
-import { harness, Client, listen, close } from './harness.js';
+import { harness, Client, listen, close, mailToken } from './harness.js';
 const h = await harness();
 const password = randomBytes(24).toString('hex');
 const runtimeUrl = new URL(h.cfg.databaseUrl);
@@ -25,6 +25,8 @@ try {
   assert.equal((await fetch(cfg.origin+'/api/health')).status,200);
   const user = new Client(cfg.origin), admin = new Client(cfg.origin);
   assert.equal((await user.signup('Runtime Applicant')).status,201);
+  await user.request('/api/auth/verify-email',{token:await mailToken(h.pool,'runtime.applicant@example.test')});
+  await user.login('runtime.applicant@example.test');
   await admin.login();
   const id = (await user.application()).application.id;
   assert.equal((await admin.request(`/api/admin/applications/${id}/approve`,{note:'Runtime role review'})).status,200);

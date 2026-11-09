@@ -1,3 +1,5 @@
+import { emailTick, smtpSender } from "./email.js";
+import { classTick } from "./classes.js";
 import { pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
@@ -55,7 +57,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   try {
     await writeFile(process.env.WORKER_ID_FILE || "/tmp/mytikas-worker-id", id, { mode: 0o600 });
     const running = () => !controller.signal.aborted;
+    const send = smtpSender(cfg);
     await Promise.all([
+      runLoop("email", () => emailTick(pool,cfg,send), controller.signal),
+      runLoop("classes", () => classTick(pool), controller.signal),
       runLoop("discord", () => discordTick(pool, cfg.discordWebhook, cfg.origin, running), controller.signal),
       runLoop("armory", () => membershipTick(pool, verifyMembership, running), controller.signal),
       runLoop("maintenance", async () => {

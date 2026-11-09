@@ -16,7 +16,7 @@ export async function seed(pool: Pool, password: string) {
     if ((await c.query('SELECT 1 FROM users UNION ALL SELECT 1 FROM applications UNION ALL SELECT 1 FROM rules WHERE actor_id IS NOT NULL OR NOT prototype LIMIT 1')).rowCount)
       throw new Error('Refusing to seed populated, unmarked database');
     await c.query(`CREATE TABLE demo_fixtures (character_key text PRIMARY KEY, character_name text NOT NULL, state text NOT NULL CHECK(state IN ('member','outsider','missing','unavailable')))`);
-    const user = async (email: string, role = 'USER') => (await c.query('INSERT INTO users(email,password_hash,role) VALUES ($1,$2,$3) RETURNING id', [email+'@demo.test', hash, role])).rows[0].id;
+    const user = async (email: string, role = 'USER') => (await c.query('INSERT INTO users(email,password_hash,role,activation_exempt) VALUES ($1,$2,$3,true) RETURNING id', [email+'@demo.test', hash, role])).rows[0].id;
     const admin = await user('admin','ADMIN');
     await user('moderator','MODERATOR');
     const rules: number[] = [];

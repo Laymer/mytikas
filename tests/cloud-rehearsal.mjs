@@ -19,13 +19,13 @@ const envFile=join(directory,'environment');
 const dbFile=join(directory,'database.yaml');
 const override=join(directory,'cloud-network.yaml');
 const env={...process.env};
-for(const key of Object.keys(env))if(/^(DATABASE_|MIGRATION_|SESSION_|APP_ORIGIN$|PUBLIC_|DISCORD_|MYTIKAS_|DEPLOYMENT_|INGRESS_|COMPOSE_|POSTGRES_|DB_ADMIN_)/.test(key))delete env[key];
+for(const key of Object.keys(env))if(/^(EMAIL_|SMTP_|DATABASE_|MIGRATION_|SESSION_|APP_ORIGIN$|PUBLIC_|DISCORD_|MYTIKAS_|DEPLOYMENT_|INGRESS_|COMPOSE_|POSTGRES_|DB_ADMIN_)/.test(key))delete env[key];
 const dbArgs=['compose','-p',dbProject,'--env-file',envFile,'-f',dbFile];
 const appArgs=['compose','-p',appProject,'--env-file',envFile,'-f',resolve('compose.cloud.yaml'),'-f',override];
 let dbStarted=false, appStarted=false;
 const adminPassword=secret();
 function environment(image){
- writeFileSync(envFile,`DB_ADMIN_PASSWORD=${adminPassword}\nMYTIKAS_IMAGE=${image}\nDATABASE_URL=postgres://mytikas_runtime:${runtimePassword}@db:5432/mytikas\nMIGRATION_DATABASE_URL=postgres://mytikas_owner:${ownerPassword}@db:5432/mytikas\nSESSION_SECRET=${sessionSecret}\nDATABASE_CA_HOST_FILE=${join(directory,'ca.pem')}\nAPP_ORIGIN=https://app.mytikas.monster\nPUBLIC_SITE_ORIGIN=https://mytikas.monster\nDISCORD_WEBHOOK_URL=\n`,{mode:0o600});
+ writeFileSync(envFile,`DB_ADMIN_PASSWORD=${adminPassword}\nMYTIKAS_IMAGE=${image}\nDATABASE_URL=postgres://mytikas_runtime:${runtimePassword}@db:5432/mytikas\nMIGRATION_DATABASE_URL=postgres://mytikas_owner:${ownerPassword}@db:5432/mytikas\nSESSION_SECRET=${sessionSecret}\nDATABASE_CA_HOST_FILE=${join(directory,'ca.pem')}\nAPP_ORIGIN=https://app.mytikas.monster\nPUBLIC_SITE_ORIGIN=https://mytikas.monster\nEMAIL_OUTBOX_KEY=${'12'.repeat(32)}\nSMTP_HOST=smtp.invalid\nEMAIL_FROM=guild@example.test\nDISCORD_WEBHOOK_URL=\n`,{mode:0o600});
 }
 function command(binary,args,{input,timeout=180000,label=binary}={}){
  const result=spawnSync(binary,args,{cwd:directory,env,input,encoding:'utf8',timeout,maxBuffer:8*1024*1024});
@@ -58,11 +58,24 @@ async function request(path,body){
 let user=(await request('/api/auth/me')).user;
 if(!fixture.previous){
  const rules=await request('/api/rules');
- user=(await request('/api/auth/register',{email:'cloud.rehearsal@example.test',password:fixture.password,characterName:'Cloud Rehearsal',motivation:'Isolated published image portability test.',rulesId:rules.id,acceptRules:true})).user;
+ const registration=await request('/api/auth/register',{email:'cloud.rehearsal@example.test',password:fixture.password,characterName:'Cloud Rehearsal',motivation:'Isolated published image portability test.',rulesId:rules.id,acceptRules:true});
+ if(registration.pendingEmail) {
+ const capture=createPool(process.env.DATABASE_URL);
+ try {
+  const {unseal}=await import('./dist/email.js');
+  const job=(await capture.query("SELECT j.payload FROM email_jobs j JOIN users u ON u.id=j.user_id WHERE u.email='cloud.rehearsal@example.test' AND j.token_id IS NOT NULL ORDER BY j.created_at DESC LIMIT 1")).rows[0];
+  const token=unseal(job.payload,process.env.EMAIL_OUTBOX_KEY).text.split('#verify=')[1].slice(0,64);
+  await request('/api/auth/verify-email',{token});
+  user=(await request('/api/auth/login',{email:'cloud.rehearsal@example.test',password:fixture.password})).user;
+ }finally{await capture.end();}
+ }else user=registration.user;
 }else assert.deepEqual(user,fixture.previous.user,'Existing session must survive image replacement');
 const detail=await request('/api/application');
-assert.equal(detail.application.status,'SUBMITTED');assert.equal(detail.submissions.length,1);assert.equal(detail.events.length,1);
-if(fixture.previous)assert.deepEqual(detail,fixture.previous.detail,'Application and immutable history must survive deployment');
+assert.equal(detail.application.status,'SUBMITTED');assert.equal(detail.submissions.length,1);assert.ok(detail.events.length>=1);
+if(fixture.previous){
+ for(const [key,value] of Object.entries(fixture.previous.detail.application))assert.deepEqual(detail.application[key],value,'Existing application fields survive upgrade');
+ assert.deepEqual(detail.submissions,fixture.previous.detail.submissions);assert.deepEqual(detail.events,fixture.previous.detail.events);
+}
 const originalCookie=cookie;
 // A separate session validates password authentication without invalidating the original session.
 cookie='';await request('/api/auth/me');
@@ -74,7 +87,8 @@ try{
  assert.equal((await pool.query("SELECT count(*)::int AS n FROM pg_tables WHERE schemaname='public' AND tableowner=current_user")).rows[0].n,0);
  await assert.rejects(pool.query('CREATE TABLE forbidden_rehearsal(id integer)'),e=>e.code==='42501');
  migrations=(await pool.query('SELECT name,checksum FROM migrations ORDER BY name')).rows;
- if(fixture.previous)assert.deepEqual(migrations,fixture.previous.migrations,'This rehearsal supports same-schema rollback only');
+ if(fixture.previous)for(const migration of fixture.previous.migrations)assert.ok(migrations.some(m=>m.name===migration.name&&m.checksum===migration.checksum),'Applied migration checksums remain unchanged');
+ if(migrations.some(m=>m.name==='004_activation_rosters.sql')){const u=(await pool.query('SELECT activation_exempt,email_verified_at FROM users WHERE id=$1',[user.id])).rows[0];assert.equal(u.activation_exempt,true);assert.equal(u.email_verified_at,null);}
 }finally{await pool.end();}
 console.log(JSON.stringify({cookie:originalCookie,user,detail,migrations}));
 `;
@@ -120,18 +134,24 @@ volumes:
  function deploy(image){
   environment(image);appStarted=true;
   app(['--profile','migration','run','--rm','migrate'],{label:'Image migration against external TLS database'});
-  psql(grantSql);
+  const compatibleGrants=image===oldImage ? grantSql.replace(', email_tokens, email_jobs, email_limits, class_jobs','').replace(/GRANT SELECT, UPDATE ON rosters, roster_slots[^;]+;/,'') : grantSql;
+  psql(compatibleGrants);
   app(['up','-d','--force-recreate','--wait','--wait-timeout','120','app','worker'],{label:'Cloud web/worker deployment'});
   app(['exec','-T','worker','node','dist/worker-health.js'],{label:'Cloud worker heartbeat'});
   verifyPorts(appArgs);verifyPorts(dbArgs);
  }
  deploy(oldImage);const password=secret();const baseline=account(undefined,password);
  console.log('Cloud rehearsal: published previous image registration, secure session, non-owner verified TLS and worker health passed.');
+ app(['stop','app','worker'],{label:'Stop writers for pre-upgrade snapshot'});
+ db(['exec','-T','db','pg_dump','-U','rehearsal_admin','-d','mytikas','-Fc','-f','/tmp/preupgrade.dump'],{label:'Private pre-upgrade snapshot'});
  deploy(newImage);account(baseline,password);
  console.log('Cloud rehearsal: upgraded image preserves password authentication, existing session, application and immutable history.');
+ app(['stop','app','worker'],{label:'Stop writers before schema rollback'});
+ db(['exec','-T','db','psql','-X','-v','ON_ERROR_STOP=1','-U','rehearsal_admin','-d','postgres','-c','DROP DATABASE mytikas WITH (FORCE)','-c','CREATE DATABASE mytikas OWNER mytikas_owner'],{label:'Recreate isolated rollback database'});
+ db(['exec','-T','db','pg_restore','-U','rehearsal_admin','-d','mytikas','--exit-on-error','/tmp/preupgrade.dump'],{label:'Restore private pre-upgrade snapshot'});
  deploy(oldImage);account(baseline,password);
- console.log('Cloud rehearsal: same-schema rollback preserves session and data.');
- console.log(JSON.stringify({oldImage,oldId,newImage,newId,migrations:baseline.migrations.map(m=>m.name),scope:'Isolated verified-TLS PostgreSQL; loopback ingress simulation; no host ports or live third-party calls; same-schema rollback only.'}));
+ console.log('Cloud rehearsal: pre-upgrade snapshot rollback preserves the original session and data.');
+ console.log(JSON.stringify({oldImage,oldId,newImage,newId,migrations:baseline.migrations.map(m=>m.name),scope:'Isolated verified-TLS PostgreSQL; loopback ingress simulation; no host ports or live third-party calls; schema rollback uses a quiesced pre-upgrade snapshot.'}));
 }finally{
  let cleanupError;
  if(appStarted)try{app(['down','--remove-orphans'],{label:'Rehearsal application cleanup'});}catch(e){cleanupError=e;}

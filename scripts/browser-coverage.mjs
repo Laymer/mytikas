@@ -7,7 +7,7 @@ import reports from 'istanbul-reports';
 // Include every owned browser script, even files never requested during the suite.
 const files = (await readdir('public')).filter(name => name.endsWith('.js')).sort();
 const map = coverageLibrary.createCoverageMap({});
-for (const suite of ['application', 'landing']) {
+for (const suite of ['application', 'landing', 'roster']) {
   const raw = JSON.parse(await readFile(`coverage/raw/frontend/${suite}.json`, 'utf8'));
   if (!Array.isArray(raw) || !raw.length) throw new Error(`Missing/empty ${suite} browser coverage`);
   let count = 0;

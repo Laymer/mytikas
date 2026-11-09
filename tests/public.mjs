@@ -9,8 +9,24 @@ try {
   mkdirSync(join(root, 'bin'));
   copyFileSync('scripts/public.mjs', join(root, 'scripts/public.mjs'));
   const record = join(root, 'calls');
-  writeFileSync(join(root,'bin/docker'), '#!/usr/bin/env node\nimport("node:fs").then(fs=>{fs.appendFileSync(process.env.RECORD,JSON.stringify({args:process.argv.slice(2),override:process.env.POSTGRES_PASSWORD,runtimeOverride:process.env.RUNTIME_DATABASE_PASSWORD})+"\\n"); if(process.argv.includes("pg_dump")){process.stdout.write("fixture-backup"); if(process.env.FAIL_BACKUP)process.exitCode=1;} });\n', {mode:0o700});
-  const env = {...process.env, HOME:root, PATH:join(root,'bin')+':'+process.env.PATH, RECORD:record, POSTGRES_PASSWORD:'ambient-override', RUNTIME_DATABASE_PASSWORD:'ambient-runtime-override'};
+  const fixture={services:{app:{image:'mytikas-public',environment:{EMAIL_OUTBOX_KEY:'e'.repeat(64),SMTP_HOST:'smtp.test',SMTP_PORT:'587',EMAIL_FROM:'sender@test',SESSION_SECRET:'s'.repeat(96),DATABASE_URL:'postgres://runtime:password@db/db'}},db:{environment:{POSTGRES_PASSWORD:'p'.repeat(64)},volumes:[{type:'volume',source:'data',target:'/var/lib/postgresql'}]}},volumes:{data:{name:'fixture-data'}}};
+  fixture.services.worker=fixture.services.app;fixture.services.migrate=fixture.services.app;
+  writeFileSync(join(root,'fixture.json'),JSON.stringify(fixture));
+  writeFileSync(join(root,'bin/docker'), `#!/usr/bin/env node
+import fs from 'node:fs';
+const raw=process.argv.slice(2),a=[...raw];if(a[0]==='--context')a.splice(0,2);
+fs.appendFileSync(process.env.RECORD,JSON.stringify({args:raw,override:process.env.POSTGRES_PASSWORD,runtimeOverride:process.env.RUNTIME_DATABASE_PASSWORD,mailOverride:process.env.SMTP_PASSWORD})+'\\n');
+if(a.includes('config')&&a.includes('json'))process.stdout.write(fs.readFileSync(process.env.HOME+'/fixture.json'));
+if(a[0]==='run')process.stdout.write(JSON.stringify({activation:!process.env.LEGACY,preflight:!process.env.LEGACY}));
+if(a[0]==='image')process.stdout.write('[{"Os":"linux","Architecture":"amd64"}]');
+if(a[0]==='volume'&&process.env.EXISTING&&!process.env.NO_VOLUME)process.stdout.write('{"Name":"fixture-data"}');
+if(a.includes('ps')&&a.includes('-q')&&a.includes('db')&&process.env.EXISTING&&!process.env.REMOVED)process.stdout.write('abc');
+if(a.includes('ps')&&a.includes('-q')&&process.env.WRITERS&&!a.includes('db'))process.stdout.write(a.at(-1));
+if(a[0]==='inspect')process.stdout.write(JSON.stringify([{State:{Running:!process.env.STOPPED},Mounts:[{Type:'volume',Name:'fixture-data',Destination:'/var/lib/postgresql'}],Image:process.env.BAD_WRITER&&a[1]==='worker'?'different':'same',Config:{Env:['SMTP_PASSWORD=fixture']}}]));
+if(a.includes('schema')&&process.env.PENDING)process.exitCode=1;
+if(a.includes('pg_dump')){process.stdout.write('fixture-backup');if(process.env.FAIL_BACKUP)process.exitCode=1;}
+`,{mode:0o700});
+  const env = {...process.env, HOME:root, PATH:join(root,'bin')+':'+process.env.PATH, RECORD:record, POSTGRES_PASSWORD:'ambient-override', RUNTIME_DATABASE_PASSWORD:'ambient-runtime-override',SMTP_PASSWORD:'ambient-mail'};
   const run = (...args) => spawnSync(process.execPath,[join(root,'scripts/public.mjs'),...args],{env,encoding:'utf8'});
   assert.equal(run('init').status,0);
   const initial = readFileSync(join(root,'.env.public'),'utf8');
@@ -31,15 +47,16 @@ try {
   assert.equal(statSync(join(root,'.env.public')).mode & 0o777,0o600);
   assert.equal(run('up').status,1);
   writeFileSync(join(root,'.public/tunnel-token'),'fixture-token');
-  assert.equal(run('up').status,0);
+  { const result=run('up'); assert.equal(result.status,0,JSON.stringify(result)); }
   const calls=readFileSync(record,'utf8').trim().split('\n').map(JSON.parse);
-  for(const c of calls){assert.equal(c.override,undefined);assert.equal(c.runtimeOverride,undefined);if(c.args.includes('--project-name'))assert(c.args.includes('mytikas-public'));}
+  for(const c of calls){assert.equal(c.override,undefined);assert.equal(c.runtimeOverride,undefined);assert.equal(c.mailOverride,undefined);if(c.args.includes('--project-name'))assert(c.args.includes('mytikas-public'));}
   const removal=calls.findIndex(c=>c.args.includes('rm'));
   const build=calls.findIndex(c=>c.args.includes('build'));
   const app=calls.findIndex(c=>c.args.includes('--no-build'));
-  assert(build>=0&&build<app,'Build one shared image before replacement');
+  assert(build>=0&&build<removal&&build<app,'Build one shared image before replacement');
   const tunnel=calls.findIndex(c=>c.args.includes('--force-recreate'));
   assert(removal>=0 && removal<app && app<tunnel);
+  assert(calls[tunnel].args.includes('--no-deps'),'Tunnel recreation must not rerun migrations beneath writers');
   assert.equal(run('backup','backups/check.dump').status,0);
   assert.equal(readFileSync(join(root,'backups/check.dump'),'utf8'),'fixture-backup');
   assert.equal(run('backup','backups/check.dump').status,1);
@@ -48,17 +65,57 @@ try {
   assert.throws(()=>statSync(join(root,'backups/failure.dump')));
   assert.equal(run('down','--volumes').status,1);
   assert.equal(run('logs','--details').status,1);
+  const persist=()=>writeFileSync(join(root,'fixture.json'),JSON.stringify(fixture));
+  for(const invalid of ['latest','ghcr.io/laymer/mytikas:main']) {
+    fixture.services.app.image=invalid;persist();writeFileSync(record,'');
+    assert.equal(run('up').status,1);assert(!readFileSync(record,'utf8').includes('"rm"'));
+  }
+  fixture.services.app.image='ghcr.io/laymer/mytikas@sha256:'+'a'.repeat(64);persist();writeFileSync(record,'');
+  assert.equal(run('up').status,0);
+  const pinned=readFileSync(record,'utf8').trim().split('\n').map(JSON.parse);
+  assert(pinned.some(c=>c.args.includes('pull')));assert(!pinned.some(c=>c.args.includes('build')));
+  fixture.services.app.image='mytikas-public';
+  const key=fixture.services.app.environment.EMAIL_OUTBOX_KEY;
+  fixture.services.app.environment.EMAIL_OUTBOX_KEY='';persist();
+  assert.match(run('up').stderr,/Missing EMAIL_OUTBOX_KEY/);
+  fixture.services.app.environment.EMAIL_OUTBOX_KEY=key;persist();
+  env.EXISTING='1';env.PENDING='1';
+  writeFileSync(record,'');
+  assert.equal(run('up').status,1);
+  assert(!readFileSync(record,'utf8').includes('\"rm\"'));
+  assert.equal(run('doctor','--smtp').status,0,'SMTP doctor reports staged schema gate without interruption');
+  delete env.PENDING;
+  env.WRITERS='1';env.BAD_WRITER='1';writeFileSync(record,'');
+  assert.match(run('up').stderr,/Running web\/worker images differ/);
+  assert(!readFileSync(record,'utf8').includes('"rm"'));
+  delete env.BAD_WRITER;
+  assert.equal(run('doctor','--smtp').status,0);
+  delete env.WRITERS;
+  for(const flag of ['STOPPED','REMOVED']) {
+    env[flag]='1';writeFileSync(record,'');assert.equal(run('up').status,0);delete env[flag];
+    const restart=readFileSync(record,'utf8').trim().split('\n').map(JSON.parse);
+    const db=restart.findIndex(c=>c.args.includes('--no-recreate'));
+    assert(db>=0&&db<restart.findIndex(c=>c.args.includes('schema')));
+    assert(restart[db].args.includes('--no-deps'));
+  }
   const stateFile=join(root,'.mytikas/machine.json');
   const managed={root,project:'mytikas-gen-fixture',env:join(root,'.env.public'),token:join(root,'.public/tunnel-token'),compose:join(root,'compose.json')};
+  writeFileSync(managed.compose,'{}',{mode:0o600});
   writeFileSync(stateFile,JSON.stringify({phase:'active',context:'fixture-context',active:managed}));
   writeFileSync(record,'');
   assert.equal(run('init').status,1);
-  assert.equal(run('up').status,0);
+  { const result=run('up'); assert.equal(result.status,0,JSON.stringify(result)); }
   assert.equal(run('doctor').status,0);
   for(const cmd of ['status','logs','admin','stop','down','help']) assert.equal(run(cmd).status,0,cmd);
   const managedCalls=readFileSync(record,'utf8').trim().split('\n').map(JSON.parse);
   assert(!managedCalls.some(c=>c.args.includes('build')));
   assert(managedCalls.some(c=>c.args.includes('fixture-context')&&c.args.includes(managed.project)&&c.args.includes('--no-deps')));
+  env.LEGACY='1';fixture.services.app.environment.EMAIL_OUTBOX_KEY='';persist();writeFileSync(record,'');
+  assert.equal(run('up').status,0);assert.equal(run('doctor').status,0);
+  assert.match(run('doctor','--smtp').stderr,/current candidate/);
+  assert(readFileSync(record,'utf8').includes('--input-type=module'));
+  delete env.LEGACY;fixture.services.app.environment.EMAIL_OUTBOX_KEY=key;persist();
+  env.NO_VOLUME='1';assert.match(run('up').stderr,/volume is unavailable/);delete env.NO_VOLUME;
   writeFileSync(stateFile,JSON.stringify({phase:'import-restoring',active:managed}));
   assert.equal(run('up').status,1);
   assert.equal(run('status').status,0);

@@ -34,7 +34,7 @@ function restoreUnlocked({ archive, database, replace = false, publicProfile = f
   const env = { ...process.env };
   let prefix = [];
   if (publicProfile) {
-    for (const key of Object.keys(env)) if (/^(POSTGRES_|RUNTIME_DATABASE_|DATABASE_|SESSION_|APP_ORIGIN$|PUBLIC_|DISCORD_|MYTIKAS_|DEPLOYMENT_PROFILE$|INGRESS_MODE$|COMPOSE_|PG)/.test(key)) delete env[key];
+    for (const key of Object.keys(env)) if (/^(POSTGRES_|RUNTIME_DATABASE_|DATABASE_|SMTP_|EMAIL_|SESSION_|APP_ORIGIN$|PUBLIC_|DISCORD_|MYTIKAS_|DEPLOYMENT_PROFILE$|INGRESS_MODE$|COMPOSE_|PG)/.test(key)) delete env[key];
     const machineHome = resolve(homedir(), '.mytikas');
     const stateFile = resolve(machineHome, 'machine.json');
     const state = existsSync(stateFile) ? JSON.parse(readFileSync(stateFile, 'utf8')) : null;

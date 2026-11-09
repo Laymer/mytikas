@@ -1,3 +1,4 @@
+import {activateBrowser} from "./browser-activation.js";
 import { chromium, firefox, webkit, expect } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import assert from "node:assert/strict";
@@ -79,6 +80,8 @@ try {
   await applicant
     .getByRole("button", { name: "Create account & apply" })
     .click();
+  await expect(applicant).toHaveURL(/email.html/);
+  await activateBrowser(applicant,h.pool,h.cfg.origin,"browser@example.test",()=>checkpoint(applicant));
   await expect(applicant.locator(".tag")).toHaveText("SUBMITTED");
   await expect(
     applicant.getByRole("link", { name: "Admin panel" }),
@@ -258,6 +261,8 @@ try {
   await expect(mobile.getByRole("button", { name: "Create account & apply" })).toBeDisabled();
   await expect(mobile.getByLabel("Why do you want to join?")).toHaveValue("Keep this application when the response is lost.");
   assert.equal((await h.pool.query("SELECT count(*) FROM users WHERE email='lost-response@example.test'")).rows[0].count, "1");
+  await activateBrowser(mobile,h.pool,h.cfg.origin,"lost-response@example.test",()=>checkpoint(mobile));
+  await mobile.getByRole("button",{name:"Sign out"}).click();
   await mobile.locator("#login-email").fill("lost-response@example.test");
   await mobile.locator("#login-password").fill(PASS);
   await mobile.getByRole("button", { name: "Sign in", exact: true }).click();
