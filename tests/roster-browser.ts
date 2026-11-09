@@ -53,7 +53,7 @@ try {
   const first = page.locator(".roster-cell").first();
   await first.focus();
   await page.keyboard.press("Enter");
-  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Edit roster slot" })).toBeVisible();
   await page.getByLabel("Member", { exact: true }).selectOption(id);
   await page.getByLabel("Role", { exact: true }).selectOption("HEALER");
   await page.getByRole("button", { name: "Apply to draft" }).click();

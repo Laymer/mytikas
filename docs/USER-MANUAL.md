@@ -30,11 +30,11 @@ New applicants complete **Apply to Mytikas**:
 1. Enter an email address and a password of 12–128 characters.
 2. Enter your full in-game character name and a motivation of up to 300 characters.
 3. Read the current guild rules and check the acceptance box.
-4. Choose **Create account & apply**.
+4. Choose **Create account & apply**. Your application is saved as **PENDING_EMAIL**.
+5. Open the verification email and confirm the link, then sign in. Until verification, you are unauthenticated and staff cannot review the application. Verification preserves the submitted application and accepted rules.
 
 Existing applicants use **Continue your ascent** and choose **Sign in**. Demo
-accounts already exist: use the password shown by `demo accounts`. Password reset
-emails are not available in this local prototype.
+accounts already exist: use the password shown by `demo accounts`. Use the password recovery page to request a 30-minute reset link; production requires configured mail delivery. Resetting an unverified account does not verify it. Verification links last 24 hours. Resend/correct-address actions require your credentials and invalidate older links; respect the displayed cooldown. Demo mail is captured locally.
 
 ![Account page showing the sign-in form, application form, and rules acceptance](images/02-sign-in-and-apply.png)
 
@@ -49,6 +49,8 @@ staff must reopen it before you can revise it.
 
 | Status | What it means / next step |
 | --- | --- |
+| PENDING_EMAIL | Verify your email before signing in or staff review. |
+| REMOVED | Membership access has ended; history is retained. An administrator can restore membership, but cleared roster assignments stay empty. |
 | SUBMITTED | Await staff review. |
 | APPROVED | Staff approved the application; join the guild in game, then confirm membership. |
 | REJECTED | Read the review note; staff can reopen the application for corrections. |

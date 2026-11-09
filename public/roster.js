@@ -135,6 +135,10 @@ export async function renderRosters(root, editable = false) {
     function edit(slot, trigger) {
       const dialog = node("dialog"),
         form = node("form");
+      const heading = node("h2", "Edit roster slot");
+      heading.id = "roster-edit-title";
+      dialog.setAttribute("aria-labelledby", heading.id);
+      form.append(heading);
       const memberLabel = node("label", "Member"),
         select = node("select");
       select.id = "slot-member";

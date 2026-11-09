@@ -1,5 +1,12 @@
 # DNS and public acceptance runbook
 
+## Current rollout state — 9 November 2026
+
+The [production rollout and acceptance runbook](PRODUCTION-ROLLOUT.md) is the current operational reference. Public Pages/HTTPS and the application tunnel are already cut over; administrators already exist. Production remains pre-004; email activation/rosters require a staged migration and private mail setup. Earlier claims below about pending DNS/Pages, unavailable Docker, missing administrators or unimplemented recovery are historical and superseded. Live mail, reviewed rules/private webhook, actual-backup restore proof, separate-network/device checks and operator acceptance remain open. Do not announce recruitment or tag an accepted release yet.
+
+## Historical implementation records (superseded where noted)
+
+
 No domain or nameserver changes have been made by this implementation. The existing landing site remains on `Laymer/olympus-mytikas`. The new repository is public and protected. Its landing preview is deployed at https://laymer.github.io/mytikas/ after mandatory CI; the custom-domain transfer remains pending.
 
 ## Observed rollback state (2026-11-09)

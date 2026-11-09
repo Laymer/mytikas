@@ -1,5 +1,12 @@
 # Public prototype implementation tracker
 
+## Current rollout state — 9 November 2026
+
+The [production rollout and acceptance runbook](PRODUCTION-ROLLOUT.md) is the current operational reference. Public Pages/HTTPS and the application tunnel are already cut over; administrators already exist. Production remains pre-004; email activation/rosters require a staged migration and private mail setup. Earlier claims below about pending DNS/Pages, unavailable Docker, missing administrators or unimplemented recovery are historical and superseded. Live mail, reviewed rules/private webhook, actual-backup restore proof, separate-network/device checks and operator acceptance remain open. Do not announce recruitment or tag an accepted release yet.
+
+## Historical implementation records (superseded where noted)
+
+
 Statuses: ⬜ To do · 🚧 In progress · ✅ Done. Existing baseline is locally implemented, not publicly accepted. A checked item requires verification; local edits alone do not satisfy merge or live-evidence requirements.
 
 Architecture: Pages at `https://mytikas.monster`; laptop app/API at `https://app.mytikas.monster` via Cloudflare Tunnel; isolated persistent public PostgreSQL; independent worker. Node 24, current design and lifecycle preserved. See [contracts](ARCHITECTURE.md).

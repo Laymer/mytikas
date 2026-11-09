@@ -1,5 +1,7 @@
 # Public laptop operations
 
+For production migration 004, use the [staged rollout and rollback runbook](PRODUCTION-ROLLOUT.md). Ordinary `up` now validates the candidate before interrupting ingress and refuses pending migrations on an existing database. `doctor --smtp` performs a no-send TLS/authentication check. Existing administrators and the completed Pages/tunnel cutover must not be repeated.
+
 The public deployment is a separate Compose project (`mytikas-public`), private environment (`.env.public`) and persistent volume (`mytikas-public_public-postgres-data`). It publishes no host ports. Normal development and the seeded demo keep their existing projects and credentials. Never run the demo seed against this database.
 
 Use a Node.js 24 shell inside WSL2, with Docker Desktop running and WSL integration enabled for that distribution. Keep the checkout in the Linux filesystem so restrictive file permissions work. Laptop sleep, Windows restart, WSL shutdown and Docker shutdown interrupt application access; GitHub Pages remains available. Configure power/startup settings manually if desired; these scripts do not change them.

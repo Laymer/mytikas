@@ -1,5 +1,12 @@
 # Verified implementation artifacts — 2026-11-09
 
+## Current rollout state — 9 November 2026
+
+The [production rollout and acceptance runbook](PRODUCTION-ROLLOUT.md) is the current operational reference. Public Pages/HTTPS and the application tunnel are already cut over; administrators already exist. Production remains pre-004; email activation/rosters require a staged migration and private mail setup. Earlier claims below about pending DNS/Pages, unavailable Docker, missing administrators or unimplemented recovery are historical and superseded. Live mail, reviewed rules/private webhook, actual-backup restore proof, separate-network/device checks and operator acceptance remain open. Do not announce recruitment or tag an accepted release yet.
+
+## Historical implementation records (superseded where noted)
+
+
 This is implementation verification, **not external showcase acceptance**. Cloudflare, the live webhook, custom-domain cutover and P16 acceptance remain pending.
 
 - Public protected repository: https://github.com/Laymer/mytikas
