@@ -6,10 +6,10 @@
     "branches": 82.86
   },
   "frontend": {
-    "lines": 93.05,
-    "statements": 93.05,
+    "lines": 97.06,
+    "statements": 97.06,
     "functions": 100,
-    "branches": 92.71
+    "branches": 97.5
   },
   "utilities": {
     "lines": 45.12,

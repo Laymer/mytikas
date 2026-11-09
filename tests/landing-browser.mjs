@@ -27,7 +27,7 @@ try {
   await page.route('https://app.mytikas.monster/api/availability', async route => {
     assert.equal(route.request().headers().cookie, undefined);
     if (state === 'offline') return route.abort();
-    await route.fulfill({ status: state === 'ready' ? 200 : 503, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': origin }, body: JSON.stringify({ ready: state === 'ready' }) });
+    await route.fulfill({ status: state === 'ready' ? 200 : 503, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': origin }, body: JSON.stringify(state === 'malformed' ? { ready: 'yes' } : { ready: state === 'ready' }) });
   });
   for (const path of ['/', '/mytikas/']) {
     await page.goto(origin + path);
@@ -37,6 +37,9 @@ try {
     state = 'unavailable';
     await page.locator('#availability-retry').click();
     await expect(page.locator('#availability')).toContainText('temporarily unavailable');
+    state = 'malformed';
+    await page.locator('#availability-retry').click();
+    await expect(page.locator('#availability')).toContainText('availability is unknown');
     state = 'offline';
     await page.locator('#availability-retry').click();
     await expect(page.locator('#availability')).toContainText('availability is unknown');
@@ -48,6 +51,14 @@ try {
       await page.coverage.startJSCoverage({ resetOnNavigation: false });
     }
   }
+  // Exercise the chronicle fallback with the canonical script and an empty
+  // article, as needed by a landing template without pre-rendered prose.
+  const html = (await readFile('landing-dist/index.html', 'utf8')).replace(/<article id="lore">[\s\S]*?<\/article>/, '<article id="lore"></article>');
+  await page.route(origin + '/', route => route.fulfill({ contentType: 'text/html', body: html }), { times: 1 });
+  await page.goto(origin + '/');
+  await page.getByText('Read the complete chronicle').click();
+  await expect(page.locator('#lore')).toContainText('The Ascent of Mytikas');
+  await expect(page.locator('#lore p')).toHaveCount(10);
   assert.deepEqual(errors, []);
   if (process.env.FRONTEND_COVERAGE === '1') {
     const coverage = [...measurements, ...await page.coverage.stopJSCoverage()];

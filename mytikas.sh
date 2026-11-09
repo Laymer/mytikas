@@ -7,6 +7,7 @@ usage() {
   cat <<'HELP'
 Usage: ./mytikas.sh [--demo] COMMAND [arguments...]
   help                    Show this help (Docker not required)
+  public COMMAND          Isolated public init/doctor/up/status/logs/admin/backup/stop/down
   doctor                  Check Bash 4+, Node 24, Compose 2.24.4+, daemon/config
   init                    Create missing private secrets; preserve existing files
   build                   Build images
@@ -31,6 +32,11 @@ Only demo accounts prints the persistent shared demo password.
 HELP
 }
 (( BASH_VERSINFO[0] >= 4 )) || fail 'Bash 4+ required'
+if [[ ${1:-} == public ]]; then
+  shift
+  command -v node >/dev/null || fail 'Node.js 24 required'
+  exec node "$ROOT/scripts/public.mjs" "$@"
+fi
 MODE=normal
 if [[ ${1:-} == --demo ]]; then MODE=demo; shift; fi
 COMMAND=${1:-help}

@@ -8,7 +8,7 @@ Initial measurement on Node 24, 2026-11-09:
 | Browser | 93.05% | 93.05% | 100% | 92.71% |
 | Executable Node utilities | 45.12% | 45.12% | 47.05% | 73.26% |
 
-The idle-connection recovery follow-up measures 87.00% backend lines/statements and 82.94% branches locally; the initial baseline remains unchanged.
+The recovery/error-path follow-up measures 87.00% backend lines/statements and 82.94% branches, plus 97.06% frontend lines/statements, 97.54% branches and 100% named functions locally. The frontend floor is raised to 97.06% lines/statements and 97.5% branches; branch rounding avoids observed V8 denominator variation between equivalent runs. Other floors remain unchanged.
 
 These are V8/c8/Istanbul measurements, not a claim of 95% coverage or exhaustive behavioral testing. Browser function coverage counts V8 named function entries; anonymous callbacks are also reflected in executable line/branch ranges. SQL and Bash are tested behaviorally and are not represented by these percentages.
 

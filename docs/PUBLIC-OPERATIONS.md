@@ -33,3 +33,5 @@ Secrets are immutable once PostgreSQL initializes: changing only `POSTGRES_PASSW
 Local validation covers Compose structure and helper behavior with a fake Docker executable, including isolation, credential preservation, tunnel/app replacement order, no-volume-deletion arguments and backup failures. `node tests/public-container.mjs` additionally builds the real containers in a randomized isolated project, verifies migration/web/worker readiness and absence of published ports, then recreates app/worker and verifies database persistence before deleting only its test volume. It does not start a tunnel or send live notifications. Live tunnel connectivity, WSL restart and external acceptance must be recorded separately; no fixture test establishes these outcomes.
 
 Backup and fresh-target restore commands, recovery drill evidence, and rotation procedures: [Recovery](RECOVERY.md).
+
+The same commands are available through the main helper: `./mytikas.sh public init`, `./mytikas.sh public doctor`, `./mytikas.sh public up` and the other public subcommands delegate to the isolated Node helper.
