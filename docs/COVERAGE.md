@@ -26,3 +26,5 @@ Priority gaps toward 95%:
 4. P08: managed-provider deployment. Published-image upgrade and rollback have been rehearsed against separately provisioned PostgreSQL with verified TLS and separate owner/runtime credentials. Real PostgreSQL tests now verify trusted-CA TLS success, wrong-CA rejection and hostname mismatch, including migrations/readiness over TLS.
 
 Production dependency audit currently reports zero vulnerabilities. Development coverage dependencies have moderate audit findings; no force/downgrade was applied to hide them. OS image scanning and software inventory are now mandatory CI artifacts; see IMAGE-SECURITY.md for the explicit gate and remaining unfixed base-image findings.
+
+Cloudflare automation follow-up: utility line/statement coverage measures 58.93%, functions 67.85%, branches 85.49%; the new setup command itself measures 94.71% lines and 96.55% branches using isolated fake APIs. Utility floors increase; no production credentials or live mutations are used by CI.
