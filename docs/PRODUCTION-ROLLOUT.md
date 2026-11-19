@@ -10,7 +10,7 @@ The operator has not yet established the maintenance window, recovery custodian,
 
 ## Candidate and protected configuration
 
-Set optional `MYTIKAS_IMAGE=ghcr.io/laymer/mytikas@sha256:<64 lowercase hex digits>` in the mode-0600 public environment file. A tag is rejected. Migration, web and worker use that digest. An empty selection retains local builds. Managed machine imports continue using archived image IDs.
+Set optional `MYTIKAS_IMAGE=ghcr.io/mytikas-monster/mytikas@sha256:<64 lowercase hex digits>` in the mode-0600 public environment file. Existing installations and backups can also use immutable digests under `ghcr.io/laymer/mytikas`. A tag is rejected. Migration, web and worker use that digest. An empty selection retains local builds. Managed machine imports continue using archived image IDs.
 
 `node scripts/public.mjs doctor` and `up` resolve Compose privately, validate mail settings and matching candidate services, build/pull before interruption, validate the candidate and inspect the existing database volume. After confirming the retained volume and container mount, `up` starts only PostgreSQL with `--no-deps --no-recreate` if necessary, then performs a read-only schema/checksum check. Ordinary `up` refuses pending/mismatched migrations before stopping ingress: use the staged procedure below. Legacy managed archives use their existing config/schema exports for read-only probes; they do not require new mail settings or an entrypoint absent from their archived image. `doctor --smtp` requires a current candidate. Never recreate an absent production volume as an empty database.
 

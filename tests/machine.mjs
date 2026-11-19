@@ -38,6 +38,10 @@ try {
   const text=Object.entries(c).filter(([k])=>k!=='tunnelToken').map(([k,v])=>`${k}=${v}`).join('\n');assert.deepEqual(configuration(text,c.tunnelToken),c);
   for(const bad of [text+'\nSESSION_SECRET=x',text+'\nCF_API_TOKEN=secret',text.replace('a'.repeat(64),'$(touch /tmp/no)'),text.replace('PUBLIC_UID=1000','PUBLIC_UID=-1')])assert.throws(()=>configuration(bad,c.tunnelToken));
   assert.throws(()=>validateConfiguration({...c,tunnelToken:'bad\ntoken'}));
+  for (const owner of ['mytikas-monster', 'laymer']) {
+    const image=`ghcr.io/${owner}/mytikas@sha256:${'a'.repeat(64)}`;
+    assert.equal(validateConfiguration({...c,MYTIKAS_IMAGE:image}).MYTIKAS_IMAGE,image);
+  }
   for(const mutate of [m=>m.platform='linux/arm64',m=>m.files['database.dump'].sha256='0'.repeat(64),m=>m.commit='https://evil.test',m=>m.generation=-1,m=>m.images.app='latest',m=>m.migrations={'../x.sql':'a'.repeat(64)}]){
     const bad=structuredClone(info);mutate(bad.manifest);assert.throws(()=>validateTransfer(bad));
   }

@@ -78,8 +78,8 @@ try {
     const resolved = JSON.parse(run([...dc,'config','--format','json'], {stdio:'pipe',encoding:'utf8'}).stdout);
     const services = resolved.services;
     const selected = services.app.image;
-    if (!managed && selected !== 'mytikas-public' && !/^ghcr\.io\/laymer\/mytikas@sha256:[a-f0-9]{64}$/.test(selected))
-      throw new Error('MYTIKAS_IMAGE must be an immutable ghcr.io/laymer/mytikas@sha256 digest.');
+    if (!managed && selected !== 'mytikas-public' && !/^ghcr\.io\/(?:mytikas-monster|laymer)\/mytikas@sha256:[a-f0-9]{64}$/.test(selected))
+      throw new Error('MYTIKAS_IMAGE must be an immutable Mytikas application image digest.');
     for (const name of ['worker', ...(managed ? [] : ['migrate'])])
       if (services[name].image !== selected) throw new Error('Candidate service images differ.');
     if (JSON.stringify(services.app.environment) !== JSON.stringify(services.worker.environment)) throw new Error('Candidate web/worker environments differ.');
