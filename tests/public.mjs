@@ -66,14 +66,16 @@ if(a.includes('pg_dump')){process.stdout.write('fixture-backup');if(process.env.
   assert.equal(run('down','--volumes').status,1);
   assert.equal(run('logs','--details').status,1);
   const persist=()=>writeFileSync(join(root,'fixture.json'),JSON.stringify(fixture));
-  for(const invalid of ['latest','ghcr.io/laymer/mytikas:main']) {
+  for(const invalid of ['latest','ghcr.io/laymer/mytikas:main','ghcr.io/mytikas-monster/mytikas:main']) {
     fixture.services.app.image=invalid;persist();writeFileSync(record,'');
     assert.equal(run('up').status,1);assert(!readFileSync(record,'utf8').includes('"rm"'));
   }
-  fixture.services.app.image='ghcr.io/laymer/mytikas@sha256:'+'a'.repeat(64);persist();writeFileSync(record,'');
-  assert.equal(run('up').status,0);
-  const pinned=readFileSync(record,'utf8').trim().split('\n').map(JSON.parse);
-  assert(pinned.some(c=>c.args.includes('pull')));assert(!pinned.some(c=>c.args.includes('build')));
+  for (const owner of ['mytikas-monster', 'laymer']) {
+    fixture.services.app.image=`ghcr.io/${owner}/mytikas@sha256:`+'a'.repeat(64);persist();writeFileSync(record,'');
+    assert.equal(run('up').status,0);
+    const pinned=readFileSync(record,'utf8').trim().split('\n').map(JSON.parse);
+    assert(pinned.some(c=>c.args.includes('pull')));assert(!pinned.some(c=>c.args.includes('build')));
+  }
   fixture.services.app.image='mytikas-public';
   const key=fixture.services.app.environment.EMAIL_OUTBOX_KEY;
   fixture.services.app.environment.EMAIL_OUTBOX_KEY='';persist();

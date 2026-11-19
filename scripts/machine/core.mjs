@@ -27,7 +27,7 @@ export function validateConfiguration(c) {
   ensure(typeof c.tunnelToken==='string'&&/^[A-Za-z0-9+/=_-]{20,16384}$/.test(c.tunnelToken),'Invalid tunnel connector token');
   if(c.EMAIL_OUTBOX_KEY)ensure(/^[a-f0-9]{64}$/i.test(c.EMAIL_OUTBOX_KEY),'Invalid email encryption key');
   for(const key of ['SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASSWORD','EMAIL_FROM'])if(c[key]!==undefined)ensure(typeof c[key]==='string'&&!/[\r\n\0]/.test(c[key]),'Invalid mail configuration');
-  if(c.MYTIKAS_IMAGE)ensure(/^ghcr\.io\/laymer\/mytikas@sha256:[a-f0-9]{64}$/.test(c.MYTIKAS_IMAGE),'Invalid immutable image selection');
+  if(c.MYTIKAS_IMAGE)ensure(/^ghcr\.io\/(?:mytikas-monster|laymer)\/mytikas@sha256:[a-f0-9]{64}$/.test(c.MYTIKAS_IMAGE),'Invalid immutable image selection');
   return c;
 }
 export function validateTransfer(info) {
@@ -84,7 +84,7 @@ export class Machine {
     const c={POSTGRES_PASSWORD:db.POSTGRES_PASSWORD,RUNTIME_DATABASE_PASSWORD:decodeURIComponent(runtime),SESSION_SECRET:app.SESSION_SECRET,DISCORD_WEBHOOK_URL:app.DISCORD_WEBHOOK_URL||'',PUBLIC_UID:uid,PUBLIC_GID:gid,tunnelToken:fs.readFileSync(d.token,'utf8').trim()};
     for(const key of ['EMAIL_OUTBOX_KEY','SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASSWORD','EMAIL_FROM'])if(app[key]!==undefined)c[key]=String(app[key]);
     if(d.imageSelection)c.MYTIKAS_IMAGE=d.imageSelection;
-    if(resolved.services.app.image.startsWith('ghcr.io/laymer/mytikas@'))c.MYTIKAS_IMAGE=resolved.services.app.image;
+    if(/^ghcr\.io\/(?:mytikas-monster|laymer)\/mytikas@/.test(resolved.services.app.image))c.MYTIKAS_IMAGE=resolved.services.app.image;
     return validateConfiguration(c);
   }
   space(dir,bytes) {const s=fs.statfsSync(dir);ensure(s.bavail*s.bsize>bytes,'Insufficient host free disk space');}
@@ -160,7 +160,7 @@ export class Machine {
     // Source host/repository are fixed; no archive-supplied URL is used.
     ensure(/^[a-f0-9]{40}$/.test(commit),'Invalid source commit');
     const archive=path.join(dir,'source.tar.gz');
-    this.run('curl',['--fail','--location','--silent','--show-error','--proto','=https','--tlsv1.2','--output',archive,`https://codeload.github.com/Laymer/mytikas/tar.gz/${commit}`],{timeout:300000});
+    this.run('curl',['--fail','--location','--silent','--show-error','--proto','=https','--tlsv1.2','--output',archive,`https://codeload.github.com/Mytikas-Monster/mytikas/tar.gz/${commit}`],{timeout:300000});
     this.run('tar',['-xzf',archive,'--strip-components=1','-C',dir]);
     fs.unlinkSync(archive);
     ensure(fs.existsSync(path.join(dir,'scripts/public-runtime-role.sql'))&&fs.existsSync(path.join(dir,'scripts/runtime-grants.sql'))&&fs.existsSync(path.join(dir,'migrations')),'Source lacks required restore files');

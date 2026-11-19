@@ -47,6 +47,14 @@ jobs:
           retention-days: 7
   browser:
     runs-on: ubuntu-24.04
+    container:
+      # Playwright 1.65.0 Noble, matching package-lock.json.
+      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
+      options: --init --shm-size=1g
+    defaults:
+      run:
+        # Embedded PostgreSQL needs an unprivileged process.
+        shell: runuser -u pwuser --preserve-environment -- env HOME=/home/pwuser bash -e {0}
     strategy:
       fail-fast: false
       matrix:
@@ -59,8 +67,11 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
-      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Install dependencies and give the test user ownership of the checkout
+        shell: bash
+        run: |
+          npm ci
+          chown -R pwuser:pwuser "$GITHUB_WORKSPACE"
       - run: npm run test:browser
         env:
           BROWSER: ${{ matrix.browser }}
@@ -224,7 +235,7 @@ jobs:
         run: |
           docker load -i /tmp/mytikas-tested.tar
           printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
-          IMAGE_REF="ghcr.io/laymer/mytikas:$COMMIT_SHA"
+          IMAGE_REF="ghcr.io/mytikas-monster/mytikas:$COMMIT_SHA"
           TESTED_ID=$(docker image inspect --format '{{.Id}}' mytikas-tested:latest)
           if docker manifest inspect "$IMAGE_REF" >/tmp/existing-manifest.json 2>/tmp/manifest-error; then
             docker pull "$IMAGE_REF"
@@ -235,7 +246,7 @@ jobs:
             docker tag mytikas-tested:latest "$IMAGE_REF"
             docker push "$IMAGE_REF"
           fi
-          docker inspect --format '{{json .RepoDigests}}' "ghcr.io/laymer/mytikas:$COMMIT_SHA" > image-digest.json
+          docker inspect --format '{{json .RepoDigests}}' "$IMAGE_REF" > image-digest.json
           docker logout ghcr.io
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
