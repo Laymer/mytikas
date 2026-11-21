@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { createApp } from '../src/app.js';
@@ -28,6 +28,24 @@ try {
   await user.request('/api/auth/verify-email',{token:await mailToken(h.pool,'runtime.applicant@example.test')});
   await user.login('runtime.applicant@example.test');
   await admin.login();
+  const publishedId=randomUUID(), content=Buffer.from('restricted-role fixture');
+  const checksum=createHash('sha256').update(content).digest('hex');
+  const form=new FormData();
+  form.append('manifest',JSON.stringify({paths:['guide.txt'],visibility:'public',sha256:[checksum]}));
+  form.append('files',new Blob([new Uint8Array(content)]),'guide.txt');
+  const headers={Cookie:admin.cookie,Origin:cfg.origin,'X-CSRF-Token':admin.csrf};
+  const uploaded=await fetch(cfg.origin+'/api/admin/addon-files',{method:'POST',headers:{...headers,'X-Upload-ID':publishedId},body:form});
+  assert.equal(uploaded.status,201);assert.equal((await uploaded.json()).sha256,checksum);
+  const changed=await fetch(cfg.origin+'/api/admin/addon-files/'+publishedId+'/visibility',{
+    method:'PATCH',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({visibility:'private'}),
+  });
+  assert.equal(changed.status,200);assert.equal((await changed.json()).visibility,'private');
+  for(const column of ['content','filename','notes','uploaded_by','published_at','request_sha256','file_count','id']){
+    await assert.rejects(pool.query('UPDATE addon_files SET '+column+'='+column+' WHERE id=$1',[publishedId]),e=>(e as {code:string}).code==='42501');
+  }
+  await assert.rejects(pool.query('DELETE FROM addon_files WHERE id=$1',[publishedId]),e=>(e as {code:string}).code==='42501');
+  const stored=await pool.query('SELECT content,sha256,visibility FROM addon_files WHERE id=$1',[publishedId]);
+  assert.deepEqual(stored.rows,[{content,sha256:checksum,visibility:'private'}]);
   const id = (await user.application()).application.id;
   assert.equal((await admin.request(`/api/admin/applications/${id}/approve`,{note:'Runtime role review'})).status,200);
   assert.equal((await admin.request('/api/admin/rules',{content:'Runtime role published rules.'})).status,201);

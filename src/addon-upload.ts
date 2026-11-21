@@ -1,5 +1,10 @@
 import express, { type Express, type RequestHandler } from "express";
-import { addonArchiveLimit, stableVersion, validateArchive } from "./addon.js";
+import {
+  AddonArchiveError,
+  addonArchiveLimit,
+  inspectAddonArchive,
+  stableVersion,
+} from "./addon.js";
 import { assertRole } from "./applications.js";
 import { transaction, type Pool } from "./db.js";
 import { HttpError } from "./validation.js";
@@ -42,11 +47,25 @@ export function installAddonUpload(
       });
     },
     async (req, res) => {
-      const version = req.get("X-Addon-Version") ?? "";
-      if (!stableVersion.test(version))
+      const expectedVersion = req.get("X-Addon-Version");
+      if (expectedVersion !== undefined && !stableVersion.test(expectedVersion))
         throw new HttpError(400, "Enter a stable version in X.Y.Z format.");
-      const sha256 = req.get("X-Addon-SHA256") ?? "";
-      if (!/^[a-f0-9]{64}$/.test(sha256))
+      const checksumMode = req.get("X-Addon-Checksum-Mode") ?? "verify";
+      if (checksumMode !== "verify" && checksumMode !== "skip")
+        throw new HttpError(
+          400,
+          "Choose verify or skip for checksum comparison.",
+        );
+      const suppliedHash = req.get("X-Addon-SHA256");
+      if (checksumMode === "skip" && suppliedHash !== undefined)
+        throw new HttpError(
+          400,
+          "Omit the supplied SHA-256 when skipping checksum comparison.",
+        );
+      if (
+        checksumMode === "verify" &&
+        !/^[a-f0-9]{64}$/.test(suppliedHash ?? "")
+      )
         throw new HttpError(
           400,
           "Supply the ZIP's lowercase SHA-256 checksum.",
@@ -68,13 +87,17 @@ export function installAddonUpload(
           400,
           "Use up to 2,048 UTF-8 bytes of plain text for release notes.",
         );
+      let version: string, sha256: string;
       try {
-        validateArchive(req.body, version, "sha256:" + sha256);
-      } catch {
-        throw new HttpError(
-          400,
-          "ZIP validation failed. Check the SHA-256, addon files and manifest version.",
-        );
+        ({ version, sha256 } = inspectAddonArchive(
+          req.body,
+          suppliedHash && "sha256:" + suppliedHash,
+          expectedVersion,
+        ));
+      } catch (error) {
+        if (error instanceof AddonArchiveError)
+          throw new HttpError(400, error.message);
+        throw error;
       }
       const release = await transaction(pool, async (client) => {
         // A role change may have taken place while the upload was being received.
@@ -86,7 +109,10 @@ export function installAddonUpload(
           [version, notes, sha256, req.body],
         );
         if (!result.rowCount)
-          throw new HttpError(409, "That version has already been published.");
+          throw new HttpError(
+            409,
+            "Version " + version + " has already been published.",
+          );
         return result.rows[0];
       });
       res.status(201).json(release);

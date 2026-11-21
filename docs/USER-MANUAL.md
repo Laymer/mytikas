@@ -209,3 +209,10 @@ Administrators open **Edit Raid Rosters** in the admin panel. Activate a slot wi
 Under **Member classes**, select a manual class or **Use armory class** and save. **Refresh armory class** queues an independent fetch; it never changes membership or overwrites manual overrides.
 
 For a joined member, administrators can enter a review note and select **Remove membership**. This immediately removes roster access and clears all assigned slots. **Restore membership** requires another reason and restores access with slots remaining empty. Both actions remain in immutable application history. Removing an administrator's membership does not change their administrative role.
+
+
+## Download or publish an addon
+
+Open **Mytikas Addon** to download public files. Signing in with an eligible member account also shows private files and official Olympus releases.
+
+Administrators can use the **Publish** sidebar. Choose files or a folder, select who can download them, and click **Publish files**. Choose **Olympus release** when publishing the guild addon by version. The site reads the version from the ZIP. Both upload modes offer **Skip checksum verification** for the selected upload.

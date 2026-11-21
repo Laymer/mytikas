@@ -1,20 +1,20 @@
 {
   "backend": {
-    "lines": 92.28,
-    "statements": 92.28,
-    "functions": 94.73,
-    "branches": 83.8
+    "lines": 97,
+    "statements": 97,
+    "functions": 99,
+    "branches": 90.9
   },
   "frontend": {
-    "lines": 97.06,
-    "statements": 97.06,
+    "lines": 98.4,
+    "statements": 98.4,
     "functions": 100,
-    "branches": 97.5
+    "branches": 98.3
   },
   "utilities": {
-    "lines": 58.93,
-    "statements": 58.93,
-    "functions": 67.85,
-    "branches": 85.4
+    "lines": 87,
+    "statements": 87,
+    "functions": 93,
+    "branches": 87.5
   }
 }

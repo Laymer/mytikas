@@ -21,3 +21,6 @@ GRANT SELECT, INSERT, UPDATE ON blacklist_reports, blacklist_checkpoint, blackli
 GRANT SELECT, INSERT, UPDATE, DELETE ON discord_links, discord_states TO :"runtime_role";
 GRANT USAGE ON SEQUENCE blacklist_warnings_id_seq TO :"runtime_role";
 GRANT SELECT, INSERT, UPDATE ON integration_health TO :"runtime_role";
+-- Admins may change visibility after publication. The bytes remain immutable.
+GRANT SELECT, INSERT ON addon_files TO :"runtime_role";
+GRANT UPDATE (visibility) ON addon_files TO :"runtime_role";

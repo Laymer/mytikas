@@ -1,5 +1,5 @@
 import { memberCards } from "./member.js";
-import { rosterNavigation } from "./roster.js";
+import { rosterNavigation } from "./roster.js?v=publisher-1";
 import {
   $,
   node,

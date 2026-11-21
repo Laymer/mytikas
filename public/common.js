@@ -13,21 +13,23 @@ export function message(text, success = false) {
   m.className = success ? "success" : "";
   if (text) m.focus();
 }
-export async function api(path, body, headers = {}) {
+export async function api(path, body, headers = {}, method = body === undefined ? "GET" : "POST") {
   const controller = new AbortController();
   const isFile = body instanceof Blob;
-  const timer = setTimeout(() => controller.abort(), isFile ? 120000 : 15000);
+  const multipart = body instanceof FormData;
+  const upload = isFile || multipart;
+  const timer = setTimeout(() => controller.abort(), upload ? 120000 : 15000);
   let res, data;
   try {
     res = await fetch(path, {
-      method: body === undefined ? "GET" : "POST",
+      method,
       credentials: "same-origin",
       signal: controller.signal,
       headers: body === undefined ? {} : {
-        "Content-Type": isFile ? "application/zip" : "application/json",
+        ...(multipart ? {} : {"Content-Type": isFile ? "application/zip" : "application/json"}),
         ...headers, "X-CSRF-Token": csrfToken || "",
       },
-      body: isFile ? body : JSON.stringify(body),
+      body: upload ? body : JSON.stringify(body),
     });
     data = await res.json();
   } catch {
