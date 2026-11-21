@@ -135,6 +135,5 @@ export async function syncReleases(pool: Pool) {
 }
 export const eligibleSql = `SELECT 1 FROM users u LEFT JOIN applications a ON a.user_id=u.id WHERE u.id=$1
   AND (u.email_verified_at IS NOT NULL OR u.activation_exempt)
-  AND (a.id IS NOT NULL OR u.role='ADMIN' OR u.activation_exempt)
   AND a.status IS DISTINCT FROM 'BLACKLISTED' AND NOT EXISTS
   (SELECT 1 FROM blacklist_reports r WHERE r.character_key=a.character_key AND r.voided_at IS NULL)`;

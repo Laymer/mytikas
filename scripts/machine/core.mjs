@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { fileDigest, writeZip, inspectZip, extractZip } from './archive.mjs';
 
 const origin='https://app.mytikas.monster';
-const memberAppFields=['MEMBERSHIP_DECISIONS_PAUSED','DISCORD_CLIENT_ID','DISCORD_CLIENT_SECRET','DISCORD_BOT_TOKEN','DISCORD_GUILD_ID','DISCORD_INVITE_URL'];
+const memberAppFields=['MEMBERSHIP_DECISIONS_PAUSED','ADDON_DOWNLOADS_PAUSED','DISCORD_CLIENT_ID','DISCORD_CLIENT_SECRET','DISCORD_BOT_TOKEN','DISCORD_GUILD_ID','DISCORD_INVITE_URL'];
 const memberWorkerFields=['MEMBERSHIP_DECISIONS_PAUSED','DISCORD_BOT_TOKEN','DISCORD_GUILD_ID','DISCORD_BLACKLIST_CHANNEL_ID','ADDON_RELEASE_TOKEN'];
 const integrationEnv=(keys,config)=>Object.fromEntries(keys.filter(k=>config[k]).map(k=>[k,config[k]]));
 const fields=[...memberAppFields,...memberWorkerFields,'POSTGRES_PASSWORD','RUNTIME_DATABASE_PASSWORD','SESSION_SECRET','DISCORD_WEBHOOK_URL','PUBLIC_UID','PUBLIC_GID','EMAIL_OUTBOX_KEY','SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASSWORD','EMAIL_FROM','MYTIKAS_IMAGE'];
@@ -29,6 +29,7 @@ export function validateConfiguration(c) {
   ensure(typeof c.DISCORD_WEBHOOK_URL==='string'&&(c.DISCORD_WEBHOOK_URL===''||/^https:\/\/(?:discord.com|discordapp.com)\/api\/webhooks\/[0-9]+\/[A-Za-z0-9_-]+$/.test(c.DISCORD_WEBHOOK_URL)),'Invalid Discord webhook');
   ensure(typeof c.tunnelToken==='string'&&/^[A-Za-z0-9+/=_-]{20,16384}$/.test(c.tunnelToken),'Invalid tunnel connector token');
   for(const key of [...memberAppFields,...memberWorkerFields]) if(c[key]) ensure(typeof c[key]==='string'&&!/[\r\n\0]/.test(c[key]),'Invalid integration configuration');
+  if(c.ADDON_DOWNLOADS_PAUSED)ensure(['0','1'].includes(c.ADDON_DOWNLOADS_PAUSED),'Invalid addon download setting');
   if(c.DISCORD_INVITE_URL)ensure(/^https:\/\/(?:discord\.gg\/|discord\.com\/invite\/)[a-zA-Z0-9_-]+$/.test(c.DISCORD_INVITE_URL),'Invalid Discord invite');
   if(c.EMAIL_OUTBOX_KEY)ensure(/^[a-f0-9]{64}$/i.test(c.EMAIL_OUTBOX_KEY),'Invalid email encryption key');
   for(const key of ['SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASSWORD','EMAIL_FROM'])if(c[key]!==undefined)ensure(typeof c[key]==='string'&&!/[\r\n\0]/.test(c[key]),'Invalid mail configuration');

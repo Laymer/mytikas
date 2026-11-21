@@ -5,7 +5,9 @@ import { transaction } from "../src/db.js";
 import { membershipTick } from "../src/worker.js";
 
 const previous = process.env.MEMBERSHIP_DECISIONS_PAUSED;
+const previousDownloadSetting = process.env.ADDON_DOWNLOADS_PAUSED;
 delete process.env.MEMBERSHIP_DECISIONS_PAUSED;
+delete process.env.ADDON_DOWNLOADS_PAUSED;
 const h = await harness();
 try {
   const staff = new Client(h.cfg.origin);
@@ -38,6 +40,7 @@ try {
   for (const client of [staff, applicant]) {
     const { data } = await client.request("/api/auth/me");
     assert.equal(data.membershipDecisionsPaused, true);
+    assert.equal(data.addonDownloadsPaused, true);
     assert.equal(data.canDownloadAddon, false);
     for (const endpoint of ["/api/addon", "/api/addon/1.2.3"]) {
       const result = await client.request(endpoint);
@@ -47,6 +50,20 @@ try {
     }
   }
   const anonymous = new Client(h.cfg.origin);
+  process.env.ADDON_DOWNLOADS_PAUSED = "0";
+  const bookmark = h.cfg.origin + "/api/addon/1.2.3";
+  for (const client of [staff, applicant, anonymous]) {
+    const { data } = await client.request("/api/auth/me");
+    assert.equal(data.membershipDecisionsPaused, true);
+    assert.equal(data.addonDownloadsPaused, false);
+    assert.equal(data.canDownloadAddon, client !== anonymous);
+    const list = await client.request("/api/addon");
+    const download = await fetch(bookmark, { headers: { Cookie: client.cookie } });
+    assert.equal(download.status, client === anonymous ? 401 : 200);
+    assert.equal(list.status, download.status);
+    assert.match(download.headers.get("cache-control")!, /no-store/);
+    if (download.ok) assert.equal(await download.text(), "fixture");
+  }
   assert.equal((await anonymous.request("/api/addon")).status, 401);
   assert.equal((await applicant.request(review + "/approve", {})).status, 403);
   for (const action of [
@@ -108,6 +125,9 @@ try {
     ),
   );
   assert.equal((await draft.application()).application.status, "BLACKLISTED");
+  assert.equal((await draft.request("/api/auth/me")).data.canDownloadAddon, false);
+  assert.equal((await draft.request("/api/addon")).status, 403);
+  assert.equal((await draft.request("/api/addon/1.2.3")).status, 403);
   assert.equal(
     (
       await staff.request("/api/blacklist/400/void", {
@@ -117,10 +137,25 @@ try {
     200,
   );
   assert.equal((await draft.application()).application.status, "SUBMITTED");
+  assert.equal((await draft.request("/api/auth/me")).data.canDownloadAddon, true);
 
   process.env.MEMBERSHIP_DECISIONS_PAUSED = "0";
+  process.env.ADDON_DOWNLOADS_PAUSED = "1";
+  const onlyDownloadsPaused = (await applicant.request("/api/auth/me")).data;
+  assert.equal(onlyDownloadsPaused.membershipDecisionsPaused, false);
+  assert.equal(onlyDownloadsPaused.addonDownloadsPaused, true);
+  assert.equal(onlyDownloadsPaused.canDownloadAddon, false);
+  assert.equal((await applicant.request("/api/addon")).status, 503);
+  assert.equal((await applicant.request("/api/addon/1.2.3")).status, 503);
+  await membershipTick(h.pool, async (name) => {
+    assert.equal(name, "Pause Member");
+    return "MATCH";
+  });
+  assert.equal((await applicant.application()).application.status, "JOINED");
+  process.env.ADDON_DOWNLOADS_PAUSED = "0";
   const active = (await applicant.request("/api/auth/me")).data;
   assert.equal(active.membershipDecisionsPaused, false);
+  assert.equal(active.addonDownloadsPaused, false);
   assert.equal(active.canDownloadAddon, true);
   assert.equal((await applicant.request("/api/addon")).status, 200);
   const downloaded = await fetch(h.cfg.origin + "/api/addon/1.2.3", {
@@ -128,21 +163,18 @@ try {
   });
   assert.equal(downloaded.status, 200);
   assert.equal(await downloaded.text(), "fixture");
-  await membershipTick(h.pool, async (name) => {
-    assert.equal(name, "Pause Member");
-    return "MATCH";
-  });
-  assert.equal((await applicant.application()).application.status, "JOINED");
   assert.equal(
     (await staff.request(review + "/remove", { note: "Fixture removal" }))
       .status,
     200,
   );
   console.log(
-    "Rollout pause and resumption preserve applicant access, moderation, sessions and scheduled checks.",
+    "Independent download and membership pauses preserve registered access, blacklist enforcement and scheduled checks.",
   );
 } finally {
   if (previous === undefined) delete process.env.MEMBERSHIP_DECISIONS_PAUSED;
   else process.env.MEMBERSHIP_DECISIONS_PAUSED = previous;
+  if (previousDownloadSetting === undefined) delete process.env.ADDON_DOWNLOADS_PAUSED;
+  else process.env.ADDON_DOWNLOADS_PAUSED = previousDownloadSetting;
   await h.stop();
 }

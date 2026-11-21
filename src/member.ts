@@ -11,6 +11,12 @@ export function membershipDecisionsPaused() {
   return process.env.MEMBERSHIP_DECISIONS_PAUSED === "1";
 }
 
+export function addonDownloadsPaused() {
+  const setting = process.env.ADDON_DOWNLOADS_PAUSED;
+  // Deployments created before the separate download switch retain their rollout hold.
+  return setting ? setting !== "0" : membershipDecisionsPaused();
+}
+
 export function requireMembershipDecisionsOpen() {
   if (membershipDecisionsPaused())
     throw new HttpError(503, "Membership decisions are temporarily paused.");
@@ -25,8 +31,8 @@ export function installMember(
 ) {
   app.use("/api/addon", authenticated, async (req, res, next) => {
     res.set("Cache-Control", "private, no-store");
-    if (membershipDecisionsPaused())
-      throw new HttpError(503, "Addon downloads are temporarily paused during membership review.");
+    if (addonDownloadsPaused())
+      throw new HttpError(503, "Addon downloads are temporarily paused.");
     if (!(await pool.query(eligibleSql, [req.user!.id])).rowCount)
       throw new HttpError(403, "Addon access is unavailable.");
     next();

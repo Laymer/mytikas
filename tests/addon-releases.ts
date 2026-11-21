@@ -221,7 +221,7 @@ try {
     "UPDATE users SET activation_exempt=false, email_verified_at=now() WHERE email=$1",
     ["legacy@example.test"],
   );
-  await assertAccess(legacy, 403);
+  await assertAccess(legacy, 200); // A verified registered member can download without an application.
 
   // A report itself revokes a bookmarked download even if stale application status says JOINED.
   await h.pool

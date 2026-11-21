@@ -1,4 +1,4 @@
-import { installMember, membershipDecisionsPaused, requireMembershipDecisionsOpen } from "./member.js";
+import { addonDownloadsPaused, installMember, membershipDecisionsPaused, requireMembershipDecisionsOpen } from "./member.js";
 import { eligibleSql } from "./addon.js";
 import { blocked, moderationLock } from "./blacklist.js";
 import {
@@ -283,13 +283,14 @@ export function createApp(
   installMember(app,pool,cfg.origin,authenticated,admin);
   app.get("/api/auth/me", async (req, res) => {
     req.session.csrf ||= randomBytes(32).toString("hex");
-    const paused = membershipDecisionsPaused();
+    const downloadsPaused = addonDownloadsPaused();
     res.json({
       user: req.user || null,
       csrfToken: req.session.csrf,
       activated: !!req.user,
-      membershipDecisionsPaused: paused,
-      canDownloadAddon: !paused && req.user ? !!(await pool.query(eligibleSql,[req.user.id])).rowCount : false,
+      membershipDecisionsPaused: membershipDecisionsPaused(),
+      addonDownloadsPaused: downloadsPaused,
+      canDownloadAddon: !downloadsPaused && req.user ? !!(await pool.query(eligibleSql,[req.user.id])).rowCount : false,
       canViewRosters: req.user ? await rosterAccess(pool, req.user.id) : false,
       canEditRosters: req.user?.role === "ADMIN",
     });
