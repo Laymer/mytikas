@@ -4,7 +4,9 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { harness } from "./harness.js";
+import { Client, harness } from "./harness.js";
+
+import { reportBlacklistConfiguration } from "../src/blacklist-status.js";
 
 const h = await harness();
 const directory = await mkdtemp(join(tmpdir(), "mytikas-integration-health-"));
@@ -39,6 +41,28 @@ function health(integrations: Record<string, string> = {}) {
   return result.status;
 }
 try {
+  const visitor = new Client(h.cfg.origin);
+  assert.equal((await visitor.request("/api/blacklist")).status, 401);
+  await visitor.login("mod@example.test");
+  assert.equal((await visitor.request("/api/blacklist")).status, 403);
+  const admin = new Client(h.cfg.origin);
+  await admin.login();
+  const status = async () => (await admin.request("/api/blacklist")).data.bot;
+  assert.deepEqual(await status(), {
+    state: "worker-unavailable",
+    missing: [],
+    lastSyncAt: null,
+  });
+  await reportBlacklistConfiguration(h.pool, false, {
+    DISCORD_GUILD_ID: "123",
+  });
+  assert.deepEqual(await status(), {
+    state: "missing-configuration",
+    missing: ["bot token", "blacklist channel ID"],
+    lastSyncAt: null,
+  });
+  await reportBlacklistConfiguration(h.pool, false, moderation);
+  assert.equal((await status()).state, "awaiting-first-sync");
   await writeFile(idFile, id);
   await h.pool.query("INSERT INTO worker_heartbeats(id) VALUES($1)", [id]);
   assert.equal(health(), 1);
@@ -50,6 +74,32 @@ try {
   await h.pool.query(
     "INSERT INTO integration_health VALUES('addon',now()),('blacklist-history',now())",
   );
+  await reportBlacklistConfiguration(h.pool, true, moderation);
+  assert.equal((await status()).state, "syncing");
+  assert.ok(Date.parse((await status()).lastSyncAt));
+  await h.pool.query(
+    "UPDATE integration_health SET succeeded_at=now()-interval '16 minutes' WHERE lane='blacklist-history'",
+  );
+  assert.equal((await status()).state, "stale");
+  await reportBlacklistConfiguration(h.pool, false, moderation);
+  assert.equal(
+    (await status()).state,
+    "awaiting-first-sync",
+    "restarted worker waits for its own first poll",
+  );
+  await h.pool.query(
+    "UPDATE integration_health SET succeeded_at=now() WHERE lane='blacklist-history'",
+  );
+  await reportBlacklistConfiguration(h.pool, false, {
+    DISCORD_BOT_TOKEN: "example-secret",
+  });
+  const incomplete = await status();
+  assert.deepEqual(incomplete.missing, ["guild ID", "blacklist channel ID"]);
+  assert.ok(!JSON.stringify(incomplete).includes("example-secret"));
+  await h.pool.query(
+    "UPDATE integration_health SET succeeded_at=now()-interval '1 minute' WHERE lane='blacklist-configuration'",
+  );
+  assert.equal((await status()).state, "worker-unavailable");
   assert.equal(health(enabled), 1);
   await h.pool.query(
     "INSERT INTO integration_health VALUES('blacklist-warnings',now())",

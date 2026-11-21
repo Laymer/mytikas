@@ -1,3 +1,4 @@
+import { reportBlacklistConfiguration } from "./blacklist-status.js";
 import { membershipDecisionsPaused } from "./member.js";
 import { reportsTick, scanTick, warningTick } from "./blacklist.js";
 import { syncReleases } from "./addon.js";
@@ -63,6 +64,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     await writeFile(process.env.WORKER_ID_FILE || "/tmp/mytikas-worker-id", id, { mode: 0o600 });
     const running = () => !controller.signal.aborted;
     const send = smtpSender(cfg);
+    let historyPolled = false;
     const integration = (name: string, task: () => Promise<void>, interval: number) =>
       runLoop(name, async () => {
         await task();
@@ -70,7 +72,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       }, controller.signal, interval);
     await Promise.all([
       ...(process.env.DISCORD_BOT_TOKEN && process.env.DISCORD_GUILD_ID && process.env.DISCORD_BLACKLIST_CHANNEL_ID ? [
-        integration("blacklist-history", () => reportsTick(pool), 10000),
+        integration("blacklist-history", async () => {
+          await reportsTick(pool);
+          historyPolled = true;
+        }, 10000),
         integration("blacklist-warnings", () => warningTick(pool,cfg.origin), 30000),
       ] : []),
       integration("blacklist-armory", () => scanTick(pool), 30000),
@@ -82,6 +87,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       runLoop("maintenance", async () => {
         await pool.query("INSERT INTO worker_heartbeats(id) VALUES ($1) ON CONFLICT(id) DO UPDATE SET updated_at=now()", [id]);
         await pool.query("DELETE FROM worker_heartbeats WHERE updated_at<now()-interval '1 day'");
+        await reportBlacklistConfiguration(pool, historyPolled);
         await cleanupTick(pool);
       }, controller.signal, 10000),
     ]);
