@@ -67,3 +67,25 @@ Changes go through a pull request and existing mandatory CI checks. After merge 
 Mail configuration is part of the protected transfer configuration: `EMAIL_OUTBOX_KEY`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, and `EMAIL_FROM`. Preserve the outbox key exactly so encrypted pending jobs remain readable. Configure missing settings before starting a migration-004 public runtime. After transferring, verify real email receipt and both confirmation and password reset flows; machine health alone does not prove SMTP deliverability.
 
 Exports resolve Compose configuration privately before comparing it with running web/worker containers. Literal dollar signs, hashes, spaces, quotes and backslashes survive round trips. Generated imports store effective secrets in their private `compose.json`; `.env.public` contains only host IDs. Preserve and protect both files. Optional immutable image-selection metadata survives re-export; archived runtime image IDs remain authoritative.
+
+## Preview and enable the Discord blacklist import
+
+Run these commands from an updated checkout **on the active managed host**, logged in as the machine owner. Its running application image must include the blacklist preview and import worker. Configure the guild-installed bot as described in the [production rollout guide](PRODUCTION-ROLLOUT.md).
+
+Use your protected provisioning workflow to place `DISCORD_BOT_TOKEN` and `DISCORD_GUILD_ID` as JSON string values in `~/.mytikas/integrations/member-home.json`. The file must be a regular file owned by the machine account with mode 600. The optional `DISCORD_BLACKLIST_CHANNEL_ID` accepts the channel ID as a string. When omitted or empty, the helper asks Discord for channels in the pinned guild and requires exactly one text or announcement channel named `blacklist`. If discovery is ambiguous, copy the intended channel ID into the protected file.
+
+```bash
+node scripts/blacklist-host.mjs preview
+```
+
+Preview runs inside the existing worker with its database access. It reads Discord history, checks permissions and counts matching applications. Review the channel ID, message, report, character and matching application counts, and the last message ID. The preview leaves the stack and database untouched.
+
+Complete the warning rehearsal from the rollout guide. Keep `MEMBERSHIP_DECISIONS_PAUSED=1` in the active Compose configuration and the running app and worker. To start the import, run the following command.
+
+```bash
+node scripts/blacklist-host.mjs enable
+```
+
+Enable repeats the preview, saves a private backup beside the active `compose.json`, and adds the guild and bot settings to the app and worker and the pinned channel to the worker. It briefly stops the tunnel, recreates the app and worker, checks worker health, reconnects the tunnel and checks public HTTPS readiness. The database stays online. The existing pause remains in effect. Repeating the command with the same effective settings performs a fresh preview and skips recreation. Verify that the worker checkpoint reaches the preview’s last message ID before reopening membership decisions in the rollout procedure.
+
+If a health check fails, the helper restores the previous Compose configuration and checks those services. Any completed import writes are retained. After an interruption, follow the operation-lock recovery instructions above and run `enable` again. A `restored` result confirms recovery of the previous configuration. Run `preview` and review its counts before retrying activation. The private Compose backup contains deployment credentials and must remain readable only by the machine owner.
