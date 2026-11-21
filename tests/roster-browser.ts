@@ -1,5 +1,5 @@
 import { memberBrowser } from "./member-browser.js";
-import { chromium, firefox, webkit, expect } from "@playwright/test";
+import { chromium, firefox, webkit, expect, type Page } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import assert from "node:assert/strict";
 import { harness, Client, PASS, mailToken } from "./harness.js";
@@ -21,14 +21,15 @@ try {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } }),
     errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  if (collect)
-    await page.coverage.startJSCoverage({ resetOnNavigation: false });
-  const checkpoint = async () => {
-    if (collect) {
-      coverage.push(...(await page.coverage.stopJSCoverage()));
-      await page.coverage.startJSCoverage({ resetOnNavigation: false });
-    }
-  };
+  async function measurePage(target: Page) {
+    if (collect) await target.coverage.startJSCoverage({resetOnNavigation: false});
+    return async (restart = true) => {
+      if (!collect) return;
+      coverage.push(...await target.coverage.stopJSCoverage());
+      if (restart) await target.coverage.startJSCoverage({resetOnNavigation: false});
+    };
+  }
+  const checkpoint = await measurePage(page);
   // Invalid review destinations stay on the account page and do not redirect.
   await checkpoint();
   await page.goto(h.cfg.origin + "/admin.html#invalid-review");
@@ -50,7 +51,7 @@ try {
   ).toBeVisible();
   await checkpoint();
   await expect(page.getByRole("heading", {name: "Your staff account"})).toBeVisible();
-  await memberBrowser(page,h,checkpoint);
+  await memberBrowser(page,h,checkpoint,measurePage);
   await page.getByRole("link", { name: "Admin panel" }).click();
   await page.getByText("Edit Raid Rosters", { exact: true }).click();
   const first = page.locator(".roster-cell").first();

@@ -7,10 +7,13 @@ import { Client, PASS, type harness } from "./harness.js";
 import { transaction } from "../src/db.js";
 import { importReport } from "../src/blacklist.js";
 
+type MeasurePage = (page: Page) => Promise<(restart?: boolean) => Promise<void>>;
+
 export async function memberBrowser(
   page: Page,
   h: Awaited<ReturnType<typeof harness>>,
   checkpoint: () => Promise<void>,
+  measurePage: MeasurePage,
 ) {
   const url = h.cfg.origin;
   const staffAccount = page.getByRole("heading", {name: "Your staff account"});
@@ -28,8 +31,8 @@ export async function memberBrowser(
   await expect(
     page.getByRole("link", { name: "Download OlympusMytikas-1.0.0.zip" }),
   ).toBeVisible();
-  const archive = await publishAddon(page);
-  await registeredAccountDownload(page, h, archive);
+  const archive = await publishAddon(page, h, measurePage);
+  await registeredAccountDownload(page, h, archive, measurePage);
   await checkpoint();
   await page.goto(url + "/blacklist.html");
   await expect(page.getByText("Waiting for a current worker status report.")).toBeVisible();
@@ -155,7 +158,7 @@ export async function memberBrowser(
     await expect(page.getByText("Denied")).toBeVisible();
     await page.unroute("**/api/" + name + "*");
   }
-  await applicantRevocation(page, h, archive);
+  await applicantRevocation(page, h, archive, measurePage);
   await pausedMembership(page, h, checkpoint);
   await page.setViewportSize({ width: 390, height: 844 });
   await checkpoint();
@@ -163,7 +166,24 @@ export async function memberBrowser(
   await expect(staffAccount).toBeVisible();
 }
 
-async function publishAddon(page: Page) {
+async function publishAddon(adminPage: Page, h: Awaited<ReturnType<typeof harness>>, measurePage: MeasurePage) {
+  const staff = new Client(h.cfg.origin);
+  await staff.login();
+  const context = await adminPage.context().browser()!.newContext();
+  const [name, value] = staff.cookie.split("=");
+  await context.addCookies([{name: name!, value: value!, url: h.cfg.origin}]);
+  const page = await context.newPage();
+  const checkpoint = await measurePage(page);
+  try {
+    await page.goto(h.cfg.origin + "/addon.html");
+    return await submitRelease(page, checkpoint);
+  } finally {
+    await checkpoint(false);
+    await context.close();
+  }
+}
+
+async function submitRelease(page: Page, checkpoint: () => Promise<void>) {
   const version = "1.0.1", archive = packageZip(version);
   const file = {name: "OlympusMytikas-1.0.1.zip", mimeType: "application/zip", buffer: archive};
   const form = page.getByRole("form", {name: "Publish an addon release"});
@@ -216,10 +236,24 @@ async function publishAddon(page: Page) {
   await expect(alert).toContainText("The response was lost.");
   await expect(publish).toBeDisabled();
   await expect(form.getByRole("link", {name: "Reload current state"})).toBeVisible();
+  await checkpoint();
+  await page.reload();
+  await versionField.fill(version);
+  await fileField.setInputFiles(file);
+  // Ending the account session invalidates an already open upload form.
+  await page.evaluate(async () => {
+    const modulePath = "/common.js";
+    const {api} = await import(modulePath);
+    await api("/api/auth/logout", {});
+  });
+  const expired = page.waitForResponse(r => r.url().endsWith("/api/admin/addon/releases"));
+  await publish.click();
+  expect((await expired).status()).toBe(403);
+  await expect(alert).toContainText("Session token missing or expired.");
   return archive;
 }
 
-async function registeredAccountDownload(page: Page, h: Awaited<ReturnType<typeof harness>>, archive: Buffer) {
+async function registeredAccountDownload(page: Page, h: Awaited<ReturnType<typeof harness>>, archive: Buffer, measurePage: MeasurePage) {
   const email = "registered-no-application@example.test";
   await h.pool.query(
     "INSERT INTO users(email,password_hash,role,email_verified_at,activation_exempt) SELECT $1,password_hash,'USER',now(),false FROM users WHERE id=$2",
@@ -228,14 +262,17 @@ async function registeredAccountDownload(page: Page, h: Awaited<ReturnType<typeo
   const context = await page.context().browser()!.newContext();
   try {
     const member = await context.newPage();
+    const checkpoint = await measurePage(member);
     await member.goto(h.cfg.origin + "/addon.html");
     await expect(member.getByRole("alert")).toHaveText("Sign in to see available addon releases.");
     await expect(member.getByRole("form", {name: "Publish an addon release"})).toHaveCount(0);
+    await checkpoint();
     await member.getByRole("link", {name: "Member Home", exact:true}).click();
     await member.locator("#login-email").fill(email);
     await member.locator("#login-password").fill(PASS);
     await member.getByRole("button", {name: "Sign in", exact:true}).click();
     await expect(member.getByText("There is no guild application associated with your account.")).toBeVisible();
+    await checkpoint();
     await member.getByRole("link", {name:"Mytikas Addon", exact:true}).click();
     const [download] = await Promise.all([
       member.waitForEvent("download"),
@@ -244,6 +281,7 @@ async function registeredAccountDownload(page: Page, h: Awaited<ReturnType<typeo
     expect(download.suggestedFilename()).toBe("OlympusMytikas-1.0.1.zip");
     expect(await readFile((await download.path())!)).toEqual(archive);
     await expect(member.getByRole("form", {name: "Publish an addon release"})).toHaveCount(0);
+    await checkpoint(false);
   } finally { await context.close(); }
 }
 
@@ -343,12 +381,13 @@ async function pausedMembership(page: Page, h: Awaited<ReturnType<typeof harness
   }
 }
 
-async function applicantRevocation(adminPage: Page, h: Awaited<ReturnType<typeof harness>>, archive: Buffer) {
+async function applicantRevocation(adminPage: Page, h: Awaited<ReturnType<typeof harness>>, archive: Buffer, measurePage: MeasurePage) {
   // Absent Character is now awaiting review after the administrator's correction.
   const url = h.cfg.origin;
   const context = await adminPage.context().browser()!.newContext();
   try {
     const applicant = await context.newPage();
+    const checkpoint = await measurePage(applicant);
     await applicant.goto(url + "/account.html");
     await applicant.locator("#login-email").fill("absent.character@example.test");
     await applicant.locator("#login-password").fill(PASS);
@@ -360,6 +399,7 @@ async function applicantRevocation(adminPage: Page, h: Awaited<ReturnType<typeof
     await expect(addonCard).toBeVisible();
     await expect(applicant.getByText("Current guild rules", {exact: true})).toBeVisible();
     await expect(nav.getByRole("link", { name: "Blacklist", exact: true })).toHaveCount(0);
+    await checkpoint();
     await addonTab.click();
     const downloadLink = applicant.getByRole("link", {name: "Download OlympusMytikas-1.0.1.zip"});
     await expect(downloadLink).toBeVisible();
@@ -378,18 +418,22 @@ async function applicantRevocation(adminPage: Page, h: Awaited<ReturnType<typeof
     const denied = await context.request.get(bookmark);
     expect(denied.status()).toBe(403);
     expect(denied.headers()["cache-control"]).toContain("no-store");
+    await checkpoint();
     await applicant.reload();
     await expect(applicant.getByRole("alert")).toHaveText("Addon access is unavailable.");
     await expect(downloadLink).toHaveCount(0);
+    await checkpoint();
     await applicant.getByRole("link", { name: "Member Home", exact: true }).click();
     await expect(applicant.getByText("BLACKLISTED", {exact: true})).toBeVisible();
     await expect(applicant.getByText("Current guild rules", {exact: true})).toBeVisible();
     await expect(addonTab).toHaveCount(0);
     await expect(addonCard).toHaveCount(0);
     await expect(applicant.getByText(reason, {exact: true})).toHaveCount(0);
+    await checkpoint();
     await applicant.goto(url + "/blacklist.html?q=Absent");
     await expect(applicant.getByRole("alert")).toHaveText("Admin permission required.");
     await expect(applicant.getByText(reason, {exact: true})).toHaveCount(0);
+    await checkpoint(false);
   } finally {
     await context.close();
   }
