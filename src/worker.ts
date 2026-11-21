@@ -67,10 +67,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
         await pool.query("INSERT INTO integration_health VALUES($1,now()) ON CONFLICT(lane) DO UPDATE SET succeeded_at=now()", [name]);
       }, controller.signal, interval);
     await Promise.all([
-      integration("blacklist-history", () => reportsTick(pool), 10000),
+      ...(process.env.DISCORD_BOT_TOKEN && process.env.DISCORD_GUILD_ID && process.env.DISCORD_BLACKLIST_CHANNEL_ID ? [
+        integration("blacklist-history", () => reportsTick(pool), 10000),
+        integration("blacklist-warnings", () => warningTick(pool,cfg.origin), 30000),
+      ] : []),
       integration("blacklist-armory", () => scanTick(pool), 30000),
-      integration("blacklist-warnings", () => warningTick(pool,cfg.origin), 30000),
-      integration("addon", () => syncReleases(pool), 300000),
+      ...(process.env.ADDON_RELEASE_TOKEN ? [integration("addon", () => syncReleases(pool), 300000)] : []),
       runLoop("email", () => emailTick(pool,cfg,send), controller.signal),
       runLoop("classes", () => classTick(pool), controller.signal),
       runLoop("discord", () => discordTick(pool, cfg.discordWebhook, cfg.origin, running), controller.signal),

@@ -161,24 +161,34 @@ export function installMember(
         }),
       });
       if (!token.ok) throw new Error();
+      const { access_token } = await token.json();
+      if (typeof access_token !== "string" || !access_token) throw new Error();
       const me = await fetch("https://discord.com/api/v10/users/@me", {
         signal: AbortSignal.timeout(10000),
         headers: {
-          Authorization: "Bearer " + (await token.json()).access_token,
+          Authorization: "Bearer " + access_token,
         },
       });
       if (!me.ok) throw new Error();
       const u = await me.json();
-      if (!/^\d{1,20}$/.test(u.id) || typeof u.username !== "string")
+      if (
+        typeof u.id !== "string" ||
+        !/^\d{1,20}$/.test(u.id) ||
+        typeof u.username !== "string"
+      )
         throw new Error();
       const result = await pool.query(
-        `WITH authorized AS (DELETE FROM discord_states WHERE user_id=$1 AND state=$4 AND expires_at>now() RETURNING user_id)
-        INSERT INTO discord_links SELECT user_id,$2,$3 FROM authorized ON CONFLICT DO NOTHING`,
+        `WITH authorized AS (
+          DELETE FROM discord_states WHERE user_id=$1 AND state=$4 AND expires_at>now() RETURNING user_id
+        ), linked AS (
+          INSERT INTO discord_links SELECT user_id,$2,$3 FROM authorized ON CONFLICT DO NOTHING RETURNING user_id
+        )
+        SELECT CASE WHEN EXISTS(SELECT 1 FROM linked) THEN 'linked'
+                    WHEN EXISTS(SELECT 1 FROM authorized) THEN 'duplicate'
+                    ELSE 'cancelled' END AS outcome`,
         [req.user!.id, u.id, u.username, claim],
       );
-      res.redirect(
-        "/account.html?discord=" + (result.rowCount ? "linked" : "duplicate"),
-      );
+      res.redirect("/account.html?discord=" + result.rows[0].outcome);
     } catch {
       res.redirect("/account.html?discord=unavailable");
     }

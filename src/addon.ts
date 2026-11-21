@@ -36,8 +36,10 @@ export function validateArchive(
   }
   const toc = zip.readAsText("OlympusMytikas/OlympusMytikas.toc");
   const lines = toc.split(/\r?\n/).map((s) => s.trim());
+  const versions = lines.filter((line) => /^##\s*Version\s*:/i.test(line));
   if (
-    !lines.includes("## Version: " + version) ||
+    versions.length !== 1 ||
+    versions[0] !== "## Version: " + version ||
     ![
       "Bootstrap.lua",
       "OlympusRecruit.lua",
@@ -52,6 +54,34 @@ export function validateArchive(
     throw new Error("Invalid addon manifest");
   return hash;
 }
+type ReleaseAsset = {
+  id: number;
+  name: string;
+  state: string;
+  size: number;
+  digest: string;
+};
+async function downloadRelease(
+  assets: ReleaseAsset[],
+  version: string,
+  headers: Record<string, string>,
+) {
+  const matching = assets.filter(
+    (a) =>
+      a.name === "OlympusMytikas-" + version + ".zip" && a.state === "uploaded",
+  );
+  if (matching.length !== 1 || matching[0]!.size > 8_000_000)
+    throw new Error("Missing or oversized release asset");
+  const asset = matching[0]!;
+  const download = await fetch(releaseApi + "/assets/" + asset.id, {
+    headers: { ...headers, Accept: "application/octet-stream" },
+    signal: AbortSignal.timeout(20000),
+  });
+  if (!download.ok) throw new Error("Release download unavailable");
+  const bytes = Buffer.from(await download.arrayBuffer());
+  if (bytes.length !== asset.size) throw new Error("Incomplete release asset");
+  return { bytes, hash: validateArchive(bytes, version, asset.digest) };
+}
 export async function syncReleases(pool: Pool) {
   const token = process.env.ADDON_RELEASE_TOKEN;
   if (!token) return;
@@ -59,6 +89,7 @@ export async function syncReleases(pool: Pool) {
     Authorization: "Bearer " + token,
     Accept: "application/vnd.github+json",
   };
+  let failure: Error | undefined;
   for (let page = 1; ; page++) {
     const res = await fetch(releaseApi + "?per_page=100&page=" + page, {
       headers,
@@ -84,30 +115,23 @@ export async function syncReleases(pool: Pool) {
         ).rowCount
       )
         continue;
-      const assets = r.assets.filter(
-        (a: any) =>
-          a.name === "OlympusMytikas-" + version + ".zip" &&
-          a.state === "uploaded",
-      );
-      if (assets.length !== 1 || assets[0].size > 8_000_000)
-        throw new Error("Missing or oversized release asset");
-      const asset = assets[0];
-      const download = await fetch(releaseApi + "/assets/" + asset.id, {
-        headers: { ...headers, Accept: "application/octet-stream" },
-        signal: AbortSignal.timeout(20000),
-      });
-      if (!download.ok) throw new Error("Release download unavailable");
-      const bytes = Buffer.from(await download.arrayBuffer());
-      if (bytes.length !== asset.size)
-        throw new Error("Incomplete release asset");
-      const hash = validateArchive(bytes, version, asset.digest);
+      let verified;
+      try {
+        verified = await downloadRelease(r.assets, version, headers);
+      } catch (error) {
+        // A bad package must not prevent verification of other published versions.
+        failure ??=
+          error instanceof Error ? error : new Error("Release unavailable");
+        continue;
+      }
       await pool.query(
         "INSERT INTO addon_releases VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
-        [version, r.published_at, r.body || "", hash, bytes],
+        [version, r.published_at, r.body || "", verified.hash, verified.bytes],
       );
     }
-    if (list.length < 100) return;
+    if (list.length < 100) break;
   }
+  if (failure) throw failure;
 }
 export const eligibleSql = `SELECT 1 FROM users u LEFT JOIN applications a ON a.user_id=u.id WHERE u.id=$1
   AND (u.email_verified_at IS NOT NULL OR u.activation_exempt)

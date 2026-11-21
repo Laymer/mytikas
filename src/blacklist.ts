@@ -127,6 +127,26 @@ export async function discordJson(path: string, init?: RequestInit) {
   if (!response.ok) throw new Error("Discord unavailable: " + response.status);
   return response.json();
 }
+export async function historyPage(guild: string, channel: string, after: string) {
+  const page = await discordJson(
+    `/channels/${channel}/messages?limit=100&after=${after}`,
+  );
+  if (!Array.isArray(page) || page.length > 100)
+    throw new Error("Invalid Discord history page");
+  const cursor = BigInt(after);
+  const ids = new Set<string>();
+  for (const message of page) {
+    if (message?.channel_id !== channel ||
+        (message.guild_id !== undefined && message.guild_id !== guild))
+      throw new Error("Discord history source mismatch");
+    const id = message.id;
+    if (typeof id !== "string" || !/^[1-9]\d{0,19}$/.test(id) ||
+        BigInt(id) <= cursor || ids.has(id))
+      throw new Error("Invalid Discord history cursor");
+    ids.add(id);
+  }
+  return page.sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1));
+}
 export async function reportsTick(pool: Pool) {
   const guild = process.env.DISCORD_GUILD_ID,
     channel = process.env.DISCORD_BLACKLIST_CHANNEL_ID;
@@ -140,11 +160,8 @@ export async function reportsTick(pool: Pool) {
         [channel],
       )
     ).rows[0]?.last_id ?? "0";
-  const messages = await discordJson(
-    `/channels/${channel}/messages?limit=100&after=${cursor}`,
-  );
+  const messages = await historyPage(guild, channel, cursor);
   if (!messages.length) return;
-  messages.sort((a: any, b: any) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1));
   await transaction(pool, async (c) => {
     await c.query(moderationLock);
     for (const msg of messages) await importReport(c, msg, guild, channel);
