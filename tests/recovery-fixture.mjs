@@ -10,8 +10,8 @@ export function recoveryFixture(key) {
   const bytes=Buffer.concat([cipher.update(JSON.stringify(mail)),cipher.final()]);
   const payload=Buffer.concat([iv,cipher.getAuthTag(),bytes]).toString('base64');
   return `
-INSERT INTO users(id,email,password_hash,role,activation_exempt,auth_version)
- SELECT '${recoveryUser}','fixture.recovery@example.test',password_hash,'USER',true,7 FROM users LIMIT 1;
+INSERT INTO users(id,email,password_hash,role,activation_exempt,auth_version,recovery_email)
+ SELECT '${recoveryUser}','fixture.recovery@example.test',password_hash,'USER',true,7,'restored-mailbox@example.test' FROM users LIMIT 1;
 INSERT INTO applications(id,user_id,character_name,character_key,status,class_override,armory_class)
  VALUES ('${recoveryMember}','${recoveryUser}','Recovery Member','recovery member','JOINED','MAGE','WARRIOR');
 INSERT INTO users(id,email,password_hash,role,email_verified_at,auth_version)

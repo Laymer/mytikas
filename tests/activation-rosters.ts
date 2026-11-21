@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { harness, Client, PASS, mailToken, character } from "./harness.js";
 import { emailTick, unseal, seal } from "../src/email.js";
 import { classTick, profileClass } from "../src/classes.js";
+import { recoveryEmailCases } from "./recovery-email.js";
 const h = await harness();
 const client = () => new Client(h.cfg.origin),
   admin = client(),
@@ -298,7 +299,10 @@ try {
       captured.push(mail);
     })
   );
-  assert.ok(captured.some((m) => m.subject.includes("password changed")));
+  assert.deepEqual(
+    captured.filter((m) => m.subject.includes("password changed")).map((m) => m.to),
+    ["correct@example.test"],
+  );
   assert.equal(
     (
       await h.pool.query(
@@ -369,8 +373,9 @@ try {
       .rowCount,
     0,
   );
+  await recoveryEmailCases(h);
   console.log(
-    "Activation, correction, concurrent consumption, reset/session revocation, roster permissions/conflicts/removal, classes and encrypted delivery passed.",
+    "Activation, correction, reset recipients and notices, session revocation, roster permissions, classes and encrypted delivery passed.",
   );
 } finally {
   await h.stop();

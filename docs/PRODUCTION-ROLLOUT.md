@@ -8,6 +8,12 @@ PR #12 implements activation, recovery and rosters. Its earlier head `433d3e5a21
 
 The operator has not yet established the maintenance window, recovery custodian, encrypted off-host backup destination, private Proton token/sender setup, reviewed rules/webhook or approved live test identities. Keep production running until these are ready. Do not bootstrap administrators again. Confirm existing administrator access privately.
 
+## Operator-controlled recovery mailboxes
+
+Migration 008 adds an optional private recovery address on an account. Sign-in and email verification continue to use the account email. With a recovery address set, password-reset links and password-change confirmations go to that mailbox. Accounts with an empty recovery address use their account email for both messages.
+
+Only a trusted database operator can assign the recovery address. Use a normalized address under the recipient's control. When changing an existing account, lock its user row, cancel outstanding RESET tokens and their pending email jobs, and assign the address in the same transaction. Reapply the release's runtime grants after migration. Those grants allow the application to read the destination and reserve writes to that field for the operator.
+
 ## Candidate and protected configuration
 
 Set optional `MYTIKAS_IMAGE=ghcr.io/mytikas-monster/mytikas@sha256:<64 lowercase hex digits>` in the mode-0600 public environment file. Existing installations and backups can also use immutable digests under `ghcr.io/laymer/mytikas`. A tag is rejected. Migration, web and worker use that digest. An empty selection retains local builds. Managed machine imports continue using archived image IDs.

@@ -11,6 +11,8 @@ import { transaction, type Pool } from "./db.js";
 import type { Config } from "./config.js";
 import { HttpError } from "./validation.js";
 export type Mail = { to: string; subject: string; text: string };
+type AccountMailbox = { email: string; recovery_email?: string | null };
+export const recoveryAddress = (user: AccountMailbox) => user.recovery_email ?? user.email;
 export type SendMail = (mail: Mail) => Promise<unknown>;
 export const digest = (token: string) =>
   createHash("sha256").update(token).digest("hex");
@@ -71,7 +73,7 @@ export async function queueMail(
 export async function issueToken(
   c: PoolClient,
   cfg: Config,
-  user: any,
+  user: AccountMailbox & { id: string },
   purpose: "VERIFY" | "RESET",
 ) {
   await cancelTokens(c, user.id, purpose);
@@ -92,7 +94,7 @@ export async function issueToken(
     cfg,
     user.id,
     {
-      to: user.email,
+      to: purpose === "RESET" ? recoveryAddress(user) : user.email,
       subject: `Mytikas: ${title}`,
       text: `${title}: ${cfg.origin}/email.html#${purpose.toLowerCase()}=${token}\nThis link expires in ${purpose === "VERIFY" ? "24 hours" : "30 minutes"}. If you did not request this, ignore it.`,
     },
@@ -124,7 +126,7 @@ export async function consumeToken(
     );
   const {
     rows: [user],
-  } = await c.query("SELECT * FROM users WHERE id=$1 FOR UPDATE", [
+  } = await c.query("SELECT id,email,recovery_email FROM users WHERE id=$1 FOR UPDATE", [
     candidate.user_id,
   ]);
   const {

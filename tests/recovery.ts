@@ -114,6 +114,11 @@ try {
       assert.deepEqual((await pool.query(`SELECT * FROM ${table} ORDER BY id`)).rows,
         (await h.pool.query(`SELECT * FROM ${table} ORDER BY id`)).rows);
     }
+    await guest.init();
+    assert.equal((await guest.request('/api/auth/forgot-password',{email:'fixture.recovery@example.test'})).status,200);
+    assert.equal(await emailTick(pool,cfg,capture.send),true);
+    assert.equal(capture.messages.at(-1)!.subject,'Mytikas: Reset your password');
+    assert.equal(capture.messages.at(-1)!.to,'restored-mailbox@example.test');
   } finally { await close(server); await pool.end(); }
   // The destructive branch is exercised only against this isolated restored database.
   assert.equal(restoreBackup({ archive, database: target, replace: true, connection: h.cfg.databaseUrl }), target);
