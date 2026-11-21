@@ -100,3 +100,9 @@ Use the deployment procedure above to verify the backup and stage the pinned ima
 During a moderation backfill, set `MEMBERSHIP_DECISIONS_PAUSED=1` on the web and worker services to pause staff decisions and membership checks. Set `ADDON_DOWNLOADS_PAUSED=0` on the web service to let verified and legacy-exempt members download releases during the backfill. Active blacklist reports block access immediately. Set the download flag to `1` to suspend downloads independently. Older deployments that omit the download flag retain their original behavior and follow the membership pause.
 
 Recreate the affected services and recreate the tunnel last because it shares the web service's network namespace. Check `membershipDecisionsPaused`, `addonDownloadsPaused` and the signed-in account's `canDownloadAddon` on `/api/auth/me`. Registration, email verification, revisions, review history and moderation imports remain available. Restore membership decisions by setting their flag to `0` after the reviewed import has caught up.
+
+### Publish a private addon release
+
+Sign in as a website administrator and open **Mytikas Addon**. Under **Publish an addon release**, enter the stable version from `OlympusMytikas/OlympusMytikas.toc` (for example, `1.2.0`), select the installable ZIP and optionally add release notes. The archive must contain one `OlympusMytikas/` directory and fit within 8,000,000 bytes.
+
+After publication, eligible members can download that version immediately. The tab shows the highest published version first and keeps older versions available. Each version has a permanent checksum. To correct a published archive, increment its manifest version and submit a new ZIP. Website uploads are stored in the private deployment database and travel with managed host transfers. The read-only GitHub sync can import additional stable releases from the private addon repository.
