@@ -9,7 +9,11 @@ GRANT CONNECT ON DATABASE :"database" TO :"runtime_role";
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM :"runtime_role";
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM :"runtime_role";
 GRANT SELECT ON migrations TO :"runtime_role";
-GRANT SELECT, INSERT, UPDATE ON users, applications, discord_jobs TO :"runtime_role";
+GRANT SELECT, INSERT, UPDATE ON applications, discord_jobs TO :"runtime_role";
+-- Public registration, first-admin bootstrap and account-management fields only.
+GRANT SELECT (id, email, password_hash, role, created_at, email_verified_at, activation_exempt, auth_version, recovery_email),
+  INSERT (email, password_hash, role, activation_exempt),
+  UPDATE (email, password_hash, role, email_verified_at, auth_version) ON users TO :"runtime_role";
 GRANT SELECT, INSERT ON rules, submissions, events, role_events TO :"runtime_role";
 GRANT SELECT, UPDATE ON discord_delivery_state TO :"runtime_role";
 GRANT SELECT, INSERT, UPDATE, DELETE ON sessions, auth_limits, worker_heartbeats, email_tokens, email_jobs, email_limits, class_jobs TO :"runtime_role";

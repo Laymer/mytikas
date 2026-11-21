@@ -129,13 +129,12 @@ volumes:
  writeFileSync(override,`networks:\n  default:\n    external: true\n    name: ${network}\n`);
  dbStarted=true;db(['up','-d','--wait','--wait-timeout','120'],{label:'Separate TLS PostgreSQL provisioning'});
  psql(`CREATE ROLE mytikas_owner LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '${ownerPassword}';\nCREATE ROLE mytikas_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD '${runtimePassword}';\nALTER DATABASE mytikas OWNER TO mytikas_owner;\nALTER SCHEMA public OWNER TO mytikas_owner;\n`);
- const grants=readFileSync(resolve('scripts/runtime-grants.sql'),'utf8');
- const grantSql=grants.replaceAll(':"runtime_role"','"mytikas_runtime"').replaceAll(':"database"','"mytikas"');
  function deploy(image){
   environment(image);appStarted=true;
   app(['--profile','migration','run','--rm','migrate'],{label:'Image migration against external TLS database'});
-  const compatibleGrants=image===oldImage ? grantSql.split('-- Migration 005')[0].replace(', email_tokens, email_jobs, email_limits, class_jobs','').replace(/GRANT SELECT, UPDATE ON rosters, roster_slots[^;]+;/,'') : grantSql;
-  psql(compatibleGrants);
+  const grantFile=image===oldImage ? 'tests/fixtures/schema-003-runtime-grants.sql' : 'scripts/runtime-grants.sql';
+  const grants=readFileSync(resolve(grantFile),'utf8').replaceAll(':"runtime_role"','"mytikas_runtime"').replaceAll(':"database"','"mytikas"');
+  psql(grants);
   app(['up','-d','--force-recreate','--wait','--wait-timeout','120','app','worker'],{label:'Cloud web/worker deployment'});
   app(['exec','-T','worker','node','dist/worker-health.js'],{label:'Cloud worker heartbeat'});
   verifyPorts(appArgs);verifyPorts(dbArgs);

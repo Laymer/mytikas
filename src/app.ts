@@ -8,6 +8,7 @@ import {
   consumeToken,
   queueMail,
   emailLimit,
+  recoveryAddress,
   cancelTokens,
 } from "./email.js";
 import { installRosters, rosterAccess } from "./rosters.js";
@@ -359,7 +360,7 @@ export function createApp(
         : "";
     const {
       rows: [u],
-    } = await pool.query("SELECT * FROM users WHERE email=$1", [address]);
+    } = await pool.query("SELECT id,email,role,password_hash,activation_exempt,email_verified_at,auth_version FROM users WHERE email=$1", [address]);
     const valid = await argon2.verify(
       u?.password_hash || (await dummyHash),
       pass,
@@ -388,7 +389,7 @@ export function createApp(
         await transaction(pool, async (c) => {
           const {
             rows: [u],
-          } = await c.query("SELECT * FROM users WHERE email=$1 FOR UPDATE", [
+          } = await c.query("SELECT id,email,recovery_email,email_verified_at,activation_exempt FROM users WHERE email=$1 FOR UPDATE", [
             address,
           ]);
           if (
@@ -415,7 +416,7 @@ export function createApp(
     await transaction(pool, async (c) => {
       const {
         rows: [u],
-      } = await c.query("SELECT * FROM users WHERE email=$1 FOR UPDATE", [
+      } = await c.query("SELECT id,email,password_hash,email_verified_at,activation_exempt FROM users WHERE email=$1 FOR UPDATE", [
         original,
       ]);
       const pass =
@@ -483,7 +484,7 @@ export function createApp(
         cfg,
         u.id,
         {
-          to: u.email,
+          to: recoveryAddress(u),
           subject: "Mytikas: password changed",
           text: "Your password was changed. Sign in with your new password. If you did not make this change, request another password reset immediately.",
         },

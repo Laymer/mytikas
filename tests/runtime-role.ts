@@ -22,6 +22,12 @@ try {
   assert.equal(ownership.rows[0].count,0);
   for(const query of ['CREATE TABLE forbidden(id int)','ALTER TABLE users ADD COLUMN forbidden int','UPDATE migrations SET checksum=checksum','TRUNCATE events','DELETE FROM rules'])
     await assert.rejects(pool.query(query), e => (e as {code:string}).code==='42501');
+  const privateInbox='runtime-recovery@example.test';
+  await h.pool.query('UPDATE users SET recovery_email=$1 WHERE id=$2',[privateInbox,h.admin.id]);
+  assert.equal((await pool.query('SELECT recovery_email FROM users WHERE id=$1',[h.admin.id])).rows[0].recovery_email,privateInbox);
+  await assert.rejects(pool.query('UPDATE users SET recovery_email=NULL WHERE id=$1',[h.admin.id]),e=>(e as {code:string}).code==='42501');
+  await assert.rejects(pool.query("INSERT INTO users(email,password_hash,recovery_email) VALUES ('forbidden@example.test','fixture',$1)",[privateInbox]),e=>(e as {code:string}).code==='42501');
+  assert.deepEqual((await h.pool.query('SELECT email,recovery_email FROM users WHERE recovery_email=$1',[privateInbox])).rows,[{email:'admin@example.test',recovery_email:privateInbox}]);
   assert.equal((await fetch(cfg.origin+'/api/health')).status,200);
   const user = new Client(cfg.origin), admin = new Client(cfg.origin);
   assert.equal((await user.signup('Runtime Applicant')).status,201);
