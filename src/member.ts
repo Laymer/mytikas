@@ -3,7 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { HttpError } from "./validation.js";
 import { eligibleSql } from "./addon.js";
 import { discordBot, voidReport } from "./blacklist.js";
-import type { Pool } from "./db.js";
+import { transaction, type Pool } from "./db.js";
 
 export function installMember(
   app: Express,
@@ -123,18 +123,21 @@ export function installMember(
     });
   });
   app.post("/api/discord/unlink", async (req, res) => {
-    await pool.query("DELETE FROM discord_states WHERE user_id=$1", [
-      req.user!.id,
-    ]);
-    await pool.query("DELETE FROM discord_links WHERE user_id=$1", [
-      req.user!.id,
-    ]);
+    await transaction(pool, async (c) => {
+      await c.query("DELETE FROM discord_states WHERE user_id=$1", [
+        req.user!.id,
+      ]);
+      await c.query("DELETE FROM discord_links WHERE user_id=$1", [
+        req.user!.id,
+      ]);
+    });
     res.json({ ok: true });
   });
   app.get("/api/discord/callback", async (req, res) => {
+    const claim = randomBytes(32).toString("hex");
     const state = await pool.query(
-      "DELETE FROM discord_states WHERE user_id=$1 AND state=$2 AND session_hash=$3 AND expires_at>now() RETURNING user_id",
-      [req.user!.id, String(req.query.state), digest(req.sessionID)],
+      "UPDATE discord_states SET state=$4 WHERE user_id=$1 AND state=$2 AND session_hash=$3 AND expires_at>now() RETURNING user_id",
+      [req.user!.id, String(req.query.state), digest(req.sessionID), claim],
     );
     if (!state.rowCount)
       throw new HttpError(
@@ -169,8 +172,9 @@ export function installMember(
       if (!/^\d{1,20}$/.test(u.id) || typeof u.username !== "string")
         throw new Error();
       const result = await pool.query(
-        "INSERT INTO discord_links VALUES($1,$2,$3) ON CONFLICT DO NOTHING",
-        [req.user!.id, u.id, u.username],
+        `WITH authorized AS (DELETE FROM discord_states WHERE user_id=$1 AND state=$4 AND expires_at>now() RETURNING user_id)
+        INSERT INTO discord_links SELECT user_id,$2,$3 FROM authorized ON CONFLICT DO NOTHING`,
+        [req.user!.id, u.id, u.username, claim],
       );
       res.redirect(
         "/account.html?discord=" + (result.rowCount ? "linked" : "duplicate"),

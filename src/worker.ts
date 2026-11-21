@@ -27,6 +27,7 @@ export async function discordTick(pool: Pool, webhook: string | undefined, origi
   }
 }
 export async function cleanupTick(pool: Pool) {
+  await pool.query("DELETE FROM discord_states WHERE expires_at<now()");
   await pool.query("DELETE FROM auth_limits WHERE reset_at<now()");
   await pool.query("DELETE FROM sessions WHERE expire<now()");
 }

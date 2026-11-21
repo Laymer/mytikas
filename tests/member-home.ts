@@ -251,6 +251,43 @@ try {
     ),
     "MALFORMED_PROFILE",
   );
+  const racer = new Client(h.cfg.origin);
+  await racer.signup("Race Character");
+  const raceId = (await racer.application()).application.id;
+  const ingest = (msgId: string) =>
+    transaction(pool, (c) =>
+      importReport(c, report(msgId, "Race", "Character"), guild, channel),
+    );
+  const staff = (act: string) =>
+    admin.request("/api/admin/applications/" + raceId + "/" + act, {
+      note: "fixture",
+    });
+  await Promise.all([staff("approve"), ingest("201")]);
+  assert.equal((await racer.application()).application.status, "BLACKLISTED");
+  await admin.request("/api/blacklist/201/void", { reason: "Wrong target" });
+  await staff("approve");
+  await staff("join");
+  assert.equal((await racer.request("/api/addon")).status, 200);
+  const roster = (await admin.request("/api/rosters")).data.rosters[0];
+  roster.slots[0].memberId = raceId;
+  await Promise.all([
+    admin.request("/api/admin/rosters/10", roster),
+    ingest("202"),
+  ]);
+  assert.equal(
+    (
+      await pool.query("SELECT 1 FROM roster_slots WHERE application_id=$1", [
+        raceId,
+      ])
+    ).rowCount,
+    0,
+  );
+  await admin.request("/api/blacklist/202/void", { reason: "Wrong target" });
+  await staff("approve");
+  await staff("join");
+  await staff("remove");
+  await Promise.all([staff("restore"), ingest("203")]);
+  assert.equal((await racer.application()).application.status, "BLACKLISTED");
   async function state(client: Client) {
     return new URL(
       (await client.request("/api/discord/link", {})).data.url,

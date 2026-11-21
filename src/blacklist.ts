@@ -33,7 +33,7 @@ export function parseReport(m: any) {
   const [first, last, reason] = lines.map((line) =>
     line.slice(line.indexOf(": ") + 2).trim(),
   );
-  if (!first || !last || !reason || /[`]/.test(m.content)) return;
+  if (!first || !last || !reason || m.content.includes("```")) return;
   const name = first + " " + last;
   return { name, key: normalize(name), reason };
 }
@@ -193,13 +193,22 @@ export async function scanTick(pool: Pool, verify: Verify = verifyMembership) {
 export async function warningTick(pool: Pool, origin: string) {
   const channel = process.env.DISCORD_BLACKLIST_CHANNEL_ID;
   if (!channel || !process.env.DISCORD_BOT_TOKEN) return;
+  await transaction(pool, async (c) => {
+    const lock = await c.query(
+      "SELECT pg_try_advisory_xact_lock(4) AS acquired",
+    );
+    if (!lock.rows[0].acquired) return;
+    await deliverWarning(c, channel, origin);
+  });
+}
+async function deliverWarning(c: PoolClient, channel: string, origin: string) {
   const channelPath = "/channels/" + channel;
   if (
     (await discordJson(channelPath)).guild_id !== process.env.DISCORD_GUILD_ID
   )
     throw new Error("Blacklist guild mismatch");
   const job = (
-    await pool.query(`SELECT w.* FROM blacklist_warnings w WHERE delivered_id IS NULL AND EXISTS
+    await c.query(`SELECT w.* FROM blacklist_warnings w WHERE delivered_id IS NULL AND EXISTS
     (SELECT 1 FROM blacklist_reports r WHERE r.character_key=w.character_key AND voided_at IS NULL) ORDER BY id LIMIT 1`)
   ).rows[0];
   if (!job) return;
@@ -207,7 +216,7 @@ export async function warningTick(pool: Pool, origin: string) {
     marker = "Guild presence #" + job.id;
   if (job.after_id === null) {
     const latest = await discordJson(path + "?limit=1");
-    await pool.query(
+    await c.query(
       "UPDATE blacklist_warnings SET after_id=$2 WHERE id=$1 AND after_id IS NULL",
       [job.id, latest[0]?.id ?? "0"],
     );
@@ -241,8 +250,8 @@ export async function warningTick(pool: Pool, origin: string) {
       allowed_mentions: { parse: [] },
     }),
   });
-  await pool.query(
-    "UPDATE blacklist_warnings SET delivered_id=$2 WHERE id=$1",
-    [job.id, sent.id],
-  );
+  await c.query("UPDATE blacklist_warnings SET delivered_id=$2 WHERE id=$1", [
+    job.id,
+    sent.id,
+  ]);
 }

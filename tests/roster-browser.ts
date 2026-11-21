@@ -49,7 +49,7 @@ try {
     page.getByRole("link", { name: "Raid Roster", exact: true }),
   ).toBeVisible();
   await checkpoint();
-  await memberBrowser(page,h);
+  await memberBrowser(page,h,checkpoint);
   await page.getByRole("link", { name: "Admin panel" }).click();
   await page.getByText("Edit Raid Rosters", { exact: true }).click();
   const first = page.locator(".roster-cell").first();
