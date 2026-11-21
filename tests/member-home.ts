@@ -83,6 +83,10 @@ globalThis.fetch = async (input, init) => {
     ]);
   }
   assert.equal(u.hostname, "discord.com");
+  if (u.pathname.endsWith("/applications/@me"))
+    return Response.json({flags: 1 << 19, bot: {id: "888"}});
+  if (u.pathname.endsWith("/permissions/member/888"))
+    return Response.json({permissions: "68608"});
   if (u.pathname.endsWith("/oauth2/token"))
     return Response.json({ access_token: "fixture" });
   if (u.pathname.endsWith("/users/@me"))
@@ -96,7 +100,7 @@ globalThis.fetch = async (input, init) => {
   if (u.pathname.includes("/members/"))
     return Response.json({ code: 10007 }, { status: membership });
   if (u.pathname.endsWith("/channels/" + channel))
-    return Response.json({ guild_id: guild });
+    return Response.json({ id: channel, guild_id: guild });
   if (init?.method === "POST") {
     const msg = {
       id: String(900 + warnings.length),

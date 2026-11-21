@@ -50,9 +50,11 @@ globalThis.fetch = async (input, init) => {
     new Headers(init?.headers).get("authorization"),
     "Bot test-only-token",
   );
+  if (u.pathname === "/api/v10/applications/@me") return Response.json({flags: 1 << 18});
+  if (u.pathname.endsWith("/permissions/member/" + bot)) return Response.json({permissions: "68608"});
   if (u.pathname === "/api/v10/users/@me") return Response.json({ id: bot });
   const path = "/api/v10/channels/" + channel;
-  if (u.pathname === path) return Response.json({ guild_id: guild });
+  if (u.pathname === path) return Response.json({ id: channel, guild_id: guild });
   assert.equal(u.pathname, path + "/messages");
   if (init?.method === "POST") {
     const payload = JSON.parse(String(init.body));

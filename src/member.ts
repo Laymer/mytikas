@@ -2,7 +2,8 @@ import type { Express, RequestHandler } from "express";
 import { createHash, randomBytes } from "node:crypto";
 import { HttpError } from "./validation.js";
 import { eligibleSql } from "./addon.js";
-import { discordBot, voidReport } from "./blacklist.js";
+import { discordBot } from "./discord-bot.js";
+import { voidReport } from "./blacklist.js";
 import { transaction, type Pool } from "./db.js";
 
 export function membershipDecisionsPaused() {

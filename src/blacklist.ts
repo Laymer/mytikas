@@ -1,3 +1,4 @@
+import { checkReportChannel, discordJson } from "./discord-bot.js";
 import type { PoolClient } from "pg";
 import { transaction, type Pool } from "./db.js";
 import { HttpError, normalize } from "./validation.js";
@@ -110,23 +111,6 @@ export async function voidReport(
       );
   });
 }
-export async function discordBot(path: string, init: RequestInit = {}) {
-  const res = await fetch("https://discord.com/api/v10" + path, {
-    ...init,
-    redirect: "error",
-    signal: AbortSignal.timeout(12000),
-    headers: {
-      Authorization: "Bot " + process.env.DISCORD_BOT_TOKEN,
-      "Content-Type": "application/json",
-    },
-  });
-  return res;
-}
-export async function discordJson(path: string, init?: RequestInit) {
-  const response = await discordBot(path, init);
-  if (!response.ok) throw new Error("Discord unavailable: " + response.status);
-  return response.json();
-}
 export async function historyPage(guild: string, channel: string, after: string) {
   const page = await discordJson(
     `/channels/${channel}/messages?limit=100&after=${after}`,
@@ -151,8 +135,7 @@ export async function reportsTick(pool: Pool) {
   const guild = process.env.DISCORD_GUILD_ID,
     channel = process.env.DISCORD_BLACKLIST_CHANNEL_ID;
   if (!guild || !channel || !process.env.DISCORD_BOT_TOKEN) return;
-  if ((await discordJson("/channels/" + channel)).guild_id !== guild)
-    throw new Error("Blacklist channel guild mismatch");
+  await checkReportChannel(guild, channel, false);
   const cursor =
     (
       await pool.query(
@@ -208,22 +191,19 @@ export async function scanTick(pool: Pool, verify: Verify = verifyMembership) {
   }
 }
 export async function warningTick(pool: Pool, origin: string) {
-  const channel = process.env.DISCORD_BLACKLIST_CHANNEL_ID;
-  if (!channel || !process.env.DISCORD_BOT_TOKEN) return;
+  const channel = process.env.DISCORD_BLACKLIST_CHANNEL_ID, guild = process.env.DISCORD_GUILD_ID;
+  if (!guild || !channel || !process.env.DISCORD_BOT_TOKEN) return;
   await transaction(pool, async (c) => {
     const lock = await c.query(
       "SELECT pg_try_advisory_xact_lock(4) AS acquired",
     );
     if (!lock.rows[0].acquired) return;
-    await deliverWarning(c, channel, origin);
+    await deliverWarning(c, guild, channel, origin);
   });
 }
-async function deliverWarning(c: PoolClient, channel: string, origin: string) {
+async function deliverWarning(c: PoolClient, guild: string, channel: string, origin: string) {
   const channelPath = "/channels/" + channel;
-  if (
-    (await discordJson(channelPath)).guild_id !== process.env.DISCORD_GUILD_ID
-  )
-    throw new Error("Blacklist guild mismatch");
+  const botId = await checkReportChannel(guild, channel, true);
   const job = (
     await c.query(`SELECT w.* FROM blacklist_warnings w WHERE delivered_id IS NULL AND EXISTS
     (SELECT 1 FROM blacklist_reports r WHERE r.character_key=w.character_key AND voided_at IS NULL) ORDER BY id LIMIT 1`)
@@ -239,13 +219,12 @@ async function deliverWarning(c: PoolClient, channel: string, origin: string) {
     );
     return;
   }
-  const bot = await discordJson("/users/@me");
   let after = job.after_id,
     sent;
   do {
     const page = await discordJson(path + "?after=" + after + "&limit=100");
     sent = page.find(
-      (m: any) => m.author.id === bot.id && m.content.split("\n")[0] === marker,
+      (m: any) => m.author.id === botId && m.content.split("\n")[0] === marker,
     );
     if (sent || page.length < 100) break;
     after = page.reduce(

@@ -1,11 +1,11 @@
-import { discordJson, historyPage, parseReport } from "./blacklist.js";
+import { checkReportChannel } from "./discord-bot.js";
+import { historyPage, parseReport } from "./blacklist.js";
 import { createPool } from "./db.js";
 const channel = process.env.DISCORD_BLACKLIST_CHANNEL_ID,
   guild = process.env.DISCORD_GUILD_ID;
 if (!channel || !guild || !process.env.DISCORD_BOT_TOKEN)
   throw new Error("Configure bot, guild and channel first");
-if ((await discordJson("/channels/" + channel)).guild_id !== guild)
-  throw new Error("Channel guild mismatch");
+await checkReportChannel(guild, channel, true);
 const pool = createPool(process.env.DATABASE_URL!);
 try {
   let after = "0",
