@@ -2,6 +2,9 @@ import Zip from "adm-zip";
 import { createHash } from "node:crypto";
 import type { Pool } from "./db.js";
 
+export const addonArchiveLimit = 8_000_000;
+export const stableVersion =
+  /^(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})$/;
 const original =
   "05466fd4f0c90eb54ee732fa8018df7a1928df9ad07b49709806fe8d0032ffd5";
 const releaseApi =
@@ -11,11 +14,15 @@ export function validateArchive(
   version: string,
   digest: string,
 ) {
+  if (!bytes.length || bytes.length > addonArchiveLimit)
+    throw new Error("Missing or oversized release asset");
   const hash = createHash("sha256").update(bytes).digest("hex");
   if ("sha256:" + hash !== digest || (version === "1.0.0" && hash !== original))
     throw new Error("Addon checksum mismatch");
-  const zip = new Zip(bytes),
-    entries = zip.getEntries(),
+  const zip = new Zip(bytes);
+  // Check the entry count before asking adm-zip to allocate its entry table.
+  if (zip.getEntryCount() > 2048) throw new Error("Too many addon files");
+  const entries = zip.getEntries(),
     names = new Set<string>();
   let total = 0;
   for (const entry of entries) {
@@ -28,6 +35,8 @@ export function validateArchive(
         (p) => !p || p === "." || p === ".." || !/^[\w.-]+$/.test(p),
       ) ||
       names.has(name) ||
+      (entry.header.method === 0 &&
+        entry.header.size !== entry.header.compressedSize) ||
       ((entry.attr >>> 16) & 0xf000) === 0xa000 ||
       total > 16_000_000
     )
@@ -70,7 +79,7 @@ async function downloadRelease(
     (a) =>
       a.name === "OlympusMytikas-" + version + ".zip" && a.state === "uploaded",
   );
-  if (matching.length !== 1 || matching[0]!.size > 8_000_000)
+  if (matching.length !== 1 || matching[0]!.size > addonArchiveLimit)
     throw new Error("Missing or oversized release asset");
   const asset = matching[0]!;
   const download = await fetch(releaseApi + "/assets/" + asset.id, {
@@ -101,9 +110,9 @@ export async function syncReleases(pool: Pool) {
       if (
         r.draft ||
         r.prerelease ||
-        !/^v(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})\.(0|[1-9]\d{0,7})$/.test(
-          r.tag_name,
-        )
+        typeof r.tag_name !== "string" ||
+        !r.tag_name.startsWith("v") ||
+        !stableVersion.test(r.tag_name.slice(1))
       )
         continue;
       const version = r.tag_name.slice(1);

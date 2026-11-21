@@ -1,4 +1,5 @@
 import { addonDownloadsPaused, installMember, membershipDecisionsPaused, requireMembershipDecisionsOpen } from "./member.js";
+import { addonUploadPath, installAddonUpload } from "./addon-upload.js";
 import { eligibleSql } from "./addon.js";
 import { blocked, moderationLock } from "./blacklist.js";
 import {
@@ -207,9 +208,12 @@ export function createApp(
         req.get("sec-fetch-site") === "cross-site"
       )
         throw new HttpError(403, "Cross-site request refused.");
-      if (!req.body || typeof req.body !== "object" || Array.isArray(req.body))
-        throw new HttpError(400, "Send a JSON object.");
-      if (!req.is("application/json")) throw new HttpError(415, "Send JSON.");
+      // Only the release upload accepts a raw body. Origin and CSRF still apply.
+      if (!(req.method === "POST" && req.path === addonUploadPath)) {
+        if (!req.body || typeof req.body !== "object" || Array.isArray(req.body))
+          throw new HttpError(400, "Send a JSON object.");
+        if (!req.is("application/json")) throw new HttpError(415, "Send JSON.");
+      }
       const token = req.get("x-csrf-token") || "",
         expected = req.session.csrf || "";
       if (
@@ -559,6 +563,7 @@ export function createApp(
   });
   installRosters(app, pool);
   app.use("/api/admin", authenticated, staff);
+  installAddonUpload(app, pool, admin);
   app.get("/api/admin/applications", async (req, res) => {
     const status =
       typeof req.query.status === "string" ? req.query.status : "PENDING";
