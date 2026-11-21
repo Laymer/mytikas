@@ -1,4 +1,4 @@
-import { discordJson, parseReport } from "./blacklist.js";
+import { discordJson, historyPage, parseReport } from "./blacklist.js";
 import { createPool } from "./db.js";
 const channel = process.env.DISCORD_BLACKLIST_CHANNEL_ID,
   guild = process.env.DISCORD_GUILD_ID;
@@ -13,12 +13,8 @@ try {
     reports = 0;
   const keys = new Set<string>();
   for (;;) {
-    const page = await discordJson(
-      `/channels/${channel}/messages?after=${after}&limit=100`,
-    );
+    const page = await historyPage(guild, channel, after);
     for (const m of page) {
-      if (m.channel_id !== channel) throw new Error("Channel mismatch");
-      if (BigInt(m.id) > BigInt(after)) after = m.id;
       messages++;
       const report = parseReport(m);
       if (report) {
@@ -26,6 +22,7 @@ try {
         reports++;
       }
     }
+    if (page.length) after = page.at(-1).id;
     if (page.length < 100) break;
   }
   const matched = await pool.query(

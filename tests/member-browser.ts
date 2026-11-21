@@ -1,5 +1,5 @@
 import { expect, type Page } from "@playwright/test";
-import { Client, type harness } from "./harness.js";
+import { Client, PASS, type harness } from "./harness.js";
 import { transaction } from "../src/db.js";
 import { importReport } from "../src/blacklist.js";
 
@@ -115,7 +115,57 @@ export async function memberBrowser(
     await expect(page.getByText("Denied")).toBeVisible();
     await page.unroute("**/api/" + name + "*");
   }
+  await applicantRevocation(page, h);
   await page.setViewportSize({ width: 390, height: 844 });
   await checkpoint();
   await page.goto(url + "/account.html");
+}
+
+async function applicantRevocation(adminPage: Page, h: Awaited<ReturnType<typeof harness>>) {
+  // Absent Character is now awaiting review after the administrator's correction.
+  const url = h.cfg.origin;
+  const context = await adminPage.context().browser()!.newContext();
+  try {
+    const applicant = await context.newPage();
+    await applicant.goto(url + "/account.html");
+    await applicant.locator("#login-email").fill("absent.character@example.test");
+    await applicant.locator("#login-password").fill(PASS);
+    await applicant.getByRole("button", { name: "Sign in", exact: true }).click();
+    const nav = applicant.getByRole("navigation");
+    const addonTab = nav.getByRole("link", { name: "Mytikas Addon", exact: true });
+    const addonCard = applicant.getByRole("heading", { name: "Mytikas Addon", exact: true });
+    await expect(addonTab).toBeVisible();
+    await expect(addonCard).toBeVisible();
+    await expect(nav.getByRole("link", { name: "Blacklist", exact: true })).toHaveCount(0);
+    await addonTab.click();
+    const downloadLink = applicant.getByRole("link", {name: "Download OlympusMytikas-1.0.1.zip"});
+    await expect(downloadLink).toBeVisible();
+    const bookmark = new URL((await downloadLink.getAttribute("href"))!, url).href;
+    const download = await context.request.get(bookmark);
+    expect(download.status()).toBe(200);
+    expect((await download.body()).toString()).toBe("browser fixture");
+
+    const reason = "Private officer finding for this fixture.";
+    await transaction(h.pool, c => importReport(c, {
+      id: "12347", channel_id: "12", author: {id: "432"}, timestamp: new Date(),
+      content: "Name: Absent\nSurname: Character\nReason: " + reason,
+    }, "34", "12"));
+    // A previously displayed link and a direct visit must enforce the new report immediately.
+    const denied = await context.request.get(bookmark);
+    expect(denied.status()).toBe(403);
+    expect(denied.headers()["cache-control"]).toContain("no-store");
+    await applicant.reload();
+    await expect(applicant.getByRole("alert")).toHaveText("Addon access is unavailable.");
+    await expect(downloadLink).toHaveCount(0);
+    await applicant.getByRole("link", { name: "Member Home", exact: true }).click();
+    await expect(applicant.getByText("BLACKLISTED", {exact: true})).toBeVisible();
+    await expect(addonTab).toHaveCount(0);
+    await expect(addonCard).toHaveCount(0);
+    await expect(applicant.getByText(reason, {exact: true})).toHaveCount(0);
+    await applicant.goto(url + "/blacklist.html?q=Absent");
+    await expect(applicant.getByRole("alert")).toHaveText("Admin permission required.");
+    await expect(applicant.getByText(reason, {exact: true})).toHaveCount(0);
+  } finally {
+    await context.close();
+  }
 }
