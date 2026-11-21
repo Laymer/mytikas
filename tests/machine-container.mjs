@@ -35,12 +35,10 @@ async function initial(machine,name,password=c.POSTGRES_PASSWORD,legacy=false) {
   machine.dc(d,['up','-d','--no-deps','--wait','--wait-timeout','180','db'],{timeout:240000});
   machine.dc(d,['run','--rm','-T','--no-deps','-e',`DATABASE_URL=postgres://mytikas_public:${password}@db:5432/mytikas_public`,'app','node','dist/migrate.js']);
   const id=machine.id(d,'db');machine.docker(['exec',id,'mkdir','/scripts']);
-  for(const n of ['runtime-grants.sql','public-runtime-role.sql'])machine.docker(['cp',join(repo,'scripts',n),`${id}:/scripts/${n}`]);
-  if(legacy) {
-    const grants=fs.readFileSync(join(repo,'scripts/runtime-grants.sql'),'utf8').split('-- Migration 005')[0].replace(', email_tokens, email_jobs, email_limits, class_jobs','').replace(/GRANT SELECT, UPDATE ON rosters, roster_slots[^;]+;/,'');
-    const file=join(machine.home,'pre004-grants.sql');fs.writeFileSync(file,grants);
-    machine.docker(['cp',file,`${id}:/scripts/runtime-grants.sql`]);
-  }
+  // The pinned legacy image uses the schema-003 grants from its build commit a34e91a.
+  const grants = legacy ? 'tests/fixtures/schema-003-runtime-grants.sql' : 'scripts/runtime-grants.sql';
+  machine.docker(['cp',join(repo,grants),id+':/scripts/runtime-grants.sql']);
+  machine.docker(['cp',join(repo,'scripts/public-runtime-role.sql'),id+':/scripts/public-runtime-role.sql']);
   machine.dc(d,['exec','-T','-e','RUNTIME_DATABASE_PASSWORD','db','psql','-X','-q','-U','mytikas_public','-d','mytikas_public','-v','ON_ERROR_STOP=1','-f','/scripts/public-runtime-role.sql'],{env:{...machine.env,RUNTIME_DATABASE_PASSWORD:c.RUNTIME_DATABASE_PASSWORD}});
   const hash=machine.dc(d,['run','--rm','-T','--no-deps','app','node','-e',"require('argon2').hash('fixture-password-long').then(h=>console.log(h))"]);d.passwordHash=hash;
   machine.sql(d,`INSERT INTO users(id,email,password_hash,role${legacy?'':',activation_exempt'}) VALUES ('00000000-0000-0000-0000-000000000001','${name}@fixture.test','${hash}','ADMIN'${legacy?'':',true'}); INSERT INTO sessions(sid,sess,expire) VALUES ('preserved-session','{"userId":"00000000-0000-0000-0000-000000000001","cookie":{"secure":true}}','2100-01-01');`);
