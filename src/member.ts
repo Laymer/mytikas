@@ -5,6 +5,15 @@ import { eligibleSql } from "./addon.js";
 import { discordBot, voidReport } from "./blacklist.js";
 import { transaction, type Pool } from "./db.js";
 
+export function membershipDecisionsPaused() {
+  return process.env.MEMBERSHIP_DECISIONS_PAUSED === "1";
+}
+
+export function requireMembershipDecisionsOpen() {
+  if (membershipDecisionsPaused())
+    throw new HttpError(503, "Membership decisions are temporarily paused.");
+}
+
 export function installMember(
   app: Express,
   pool: Pool,
@@ -14,6 +23,8 @@ export function installMember(
 ) {
   app.use("/api/addon", authenticated, async (req, res, next) => {
     res.set("Cache-Control", "private, no-store");
+    if (membershipDecisionsPaused())
+      throw new HttpError(503, "Addon downloads are temporarily paused during membership review.");
     if (!(await pool.query(eligibleSql, [req.user!.id])).rowCount)
       throw new HttpError(403, "Addon access is unavailable.");
     next();

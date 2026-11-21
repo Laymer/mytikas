@@ -147,13 +147,20 @@ const descriptions = {
     "Staff have reopened your application. Revise it below and accept the current rules to resubmit.",
   JOINED: "Welcome to Olympus Mytikas. Your membership is confirmed.",
 };
-export function applicationView(data) {
+export function membershipPauseNotice() {
+  const notice = node("p", "Membership decisions, guild membership checks and addon downloads are temporarily paused. You can still apply or revise a reopened application.", "card");
+  notice.setAttribute("role", "status");
+  return notice;
+}
+export function applicationView(data, membershipDecisionsPaused) {
   const { application: a, submissions, events } = data,
     box = node("section", undefined, "card");
   box.append(
     node("span", a.status, "tag"),
     node("h2", a.character_name),
-    node("p", descriptions[a.status]),
+    node("p", a.status === "APPROVED" && membershipDecisionsPaused
+      ? "Your application is approved and awaiting confirmation of guild membership."
+      : descriptions[a.status]),
     node("p", `Application ${a.id}`, "meta"),
   );
   const armory=node("a","Open character in the armory");
@@ -175,7 +182,7 @@ export function applicationView(data) {
         "meta",
       ),
     );
-  if (a.status === "APPROVED")
+  if (a.status === "APPROVED" && !membershipDecisionsPaused)
     box.append(
       node(
         "p",
