@@ -1,3 +1,4 @@
+import { membershipDecisionsPaused } from "./member.js";
 import { reportsTick, scanTick, warningTick } from "./blacklist.js";
 import { syncReleases } from "./addon.js";
 import { emailTick, smtpSender } from "./email.js";
@@ -12,6 +13,7 @@ import { checkMembership, verifyMembership, type Verify } from "./armory.js";
 import { deliverDiscord } from "./discord.js";
 
 export async function membershipTick(pool: Pool, verify: Verify, running = () => true) {
+  if (membershipDecisionsPaused()) return;
   const { rows } = await pool.query(
     `SELECT id FROM applications WHERE status='APPROVED' AND next_check_at<=now() ORDER BY next_check_at LIMIT 20`,
   );

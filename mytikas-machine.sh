@@ -166,8 +166,8 @@ import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 
 const origin='https://app.mytikas.monster';
-const memberAppFields=['DISCORD_CLIENT_ID','DISCORD_CLIENT_SECRET','DISCORD_BOT_TOKEN','DISCORD_GUILD_ID','DISCORD_INVITE_URL'];
-const memberWorkerFields=['DISCORD_BOT_TOKEN','DISCORD_GUILD_ID','DISCORD_BLACKLIST_CHANNEL_ID','ADDON_RELEASE_TOKEN'];
+const memberAppFields=['MEMBERSHIP_DECISIONS_PAUSED','DISCORD_CLIENT_ID','DISCORD_CLIENT_SECRET','DISCORD_BOT_TOKEN','DISCORD_GUILD_ID','DISCORD_INVITE_URL'];
+const memberWorkerFields=['MEMBERSHIP_DECISIONS_PAUSED','DISCORD_BOT_TOKEN','DISCORD_GUILD_ID','DISCORD_BLACKLIST_CHANNEL_ID','ADDON_RELEASE_TOKEN'];
 const integrationEnv=(keys,config)=>Object.fromEntries(keys.filter(k=>config[k]).map(k=>[k,config[k]]));
 const fields=[...memberAppFields,...memberWorkerFields,'POSTGRES_PASSWORD','RUNTIME_DATABASE_PASSWORD','SESSION_SECRET','DISCORD_WEBHOOK_URL','PUBLIC_UID','PUBLIC_GID','EMAIL_OUTBOX_KEY','SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASSWORD','EMAIL_FROM','MYTIKAS_IMAGE'];
 const ensure=(condition,message)=>{if(!condition)throw new Error(message);};
@@ -211,7 +211,7 @@ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 export class Machine {
   constructor(home=path.join(homedir(),'.mytikas'),root=process.env.MYTIKAS_LAUNCH_DIR||process.cwd()) {
     this.home=home;this.root=root;privateDirectory(home);this.file=path.join(home,'machine.json');this.state=readJSON(this.file,{version:1,highest:0,phase:'idle'});
-    this.env={...process.env};for(const k of Object.keys(this.env))if(/^(DOCKER_HOST$|DOCKER_CONTEXT$|COMPOSE_|POSTGRES_|PG|DATABASE_|RUNTIME_DATABASE_|SMTP_|EMAIL_|SESSION_|APP_ORIGIN$|PUBLIC_|DISCORD_|ADDON_|MYTIKAS_|DEPLOYMENT_PROFILE$|INGRESS_MODE$)/.test(k))delete this.env[k];
+    this.env={...process.env};for(const k of Object.keys(this.env))if(/^(DOCKER_HOST$|DOCKER_CONTEXT$|COMPOSE_|POSTGRES_|PG|DATABASE_|RUNTIME_DATABASE_|SMTP_|EMAIL_|SESSION_|APP_ORIGIN$|PUBLIC_|DISCORD_|ADDON_|MEMBERSHIP_|MYTIKAS_|DEPLOYMENT_PROFILE$|INGRESS_MODE$)/.test(k))delete this.env[k];
   }
   save(patch) {Object.assign(this.state,patch);atomic(this.file,this.state);}
   run(binary,args,options={}) {

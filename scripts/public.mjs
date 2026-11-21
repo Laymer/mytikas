@@ -22,7 +22,7 @@ const root = managed?.root || resolve(dirname(fileURLToPath(import.meta.url)), '
 const envFile = managed?.env || resolve(root, '.env.public');
 const tokenFile = managed?.token || resolve(root, '.public/tunnel-token');
 const env = { ...process.env };
-for (const key of Object.keys(env)) if (/^(DOCKER_HOST$|DOCKER_CONTEXT$|POSTGRES_|DATABASE_|RUNTIME_DATABASE_|SMTP_|EMAIL_|SESSION_|APP_ORIGIN$|PUBLIC_|DISCORD_|ADDON_|MYTIKAS_|DEPLOYMENT_PROFILE$|INGRESS_MODE$|COMPOSE_)/.test(key)) delete env[key];
+for (const key of Object.keys(env)) if (/^(DOCKER_HOST$|DOCKER_CONTEXT$|POSTGRES_|DATABASE_|RUNTIME_DATABASE_|SMTP_|EMAIL_|SESSION_|APP_ORIGIN$|PUBLIC_|DISCORD_|ADDON_|MEMBERSHIP_|MYTIKAS_|DEPLOYMENT_PROFILE$|INGRESS_MODE$|COMPOSE_)/.test(key)) delete env[key];
 const dc = [...(machine?.context ? ['--context', machine.context] : []), 'compose', '--project-name', managed?.project || 'mytikas-public', '--env-file', envFile, '-f', managed?.compose || resolve(root, 'compose.public.yaml')];
 function run(args, options = {}) {
   if (machine?.context && args[0] !== '--context') args = ['--context', machine.context, ...args];

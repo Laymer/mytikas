@@ -120,10 +120,80 @@ export async function memberBrowser(
     await page.unroute("**/api/" + name + "*");
   }
   await applicantRevocation(page, h);
+  await pausedMembership(page, h, checkpoint);
   await page.setViewportSize({ width: 390, height: 844 });
   await checkpoint();
   await page.goto(url + "/account.html");
   await expect(staffAccount).toBeVisible();
+}
+
+async function pausedMembership(page: Page, h: Awaited<ReturnType<typeof harness>>, checkpoint: () => Promise<void>) {
+  const url = h.cfg.origin;
+  const approved = new Client(url), reopened = new Client(url), staff = new Client(url);
+  await staff.login();
+  expect((await approved.signup("Pause Approved")).status).toBe(201);
+  expect((await reopened.signup("Pause Reopened")).status).toBe(201);
+  const approvedId = (await approved.application()).application.id;
+  const reopenedId = (await reopened.application()).application.id;
+  expect((await staff.request(`/api/admin/applications/${approvedId}/approve`, {})).status).toBe(200);
+  expect((await staff.request(`/api/admin/applications/${reopenedId}/reject`, {})).status).toBe(200);
+  expect((await staff.request(`/api/admin/applications/${reopenedId}/reopen`, {})).status).toBe(200);
+
+  const context = page.context();
+  const staffCookies = await context.cookies();
+  const previous = process.env.MEMBERSHIP_DECISIONS_PAUSED;
+  const notice = page.locator("#workspace [role=status]");
+  try {
+    process.env.MEMBERSHIP_DECISIONS_PAUSED = "1";
+    await checkpoint();
+    await page.goto(url + "/account.html");
+    await expect(page.getByRole("heading", {name: "Your staff account"})).toBeVisible();
+    await expect(notice).toContainText("temporarily paused");
+    await expect(page.getByRole("link", {name: "Raid Roster", exact: true})).toBeVisible();
+    await expect(page.getByRole("link", {name: "Mytikas Addon", exact: true})).toHaveCount(0);
+    await checkpoint();
+    await page.goto(url + "/admin.html#" + approvedId);
+    await expect(notice).toContainText("temporarily paused");
+    const detail = page.locator("#detail");
+    await expect(detail.getByText("Submission notifications")).toBeVisible();
+    await detail.getByText("Submission history (1)").click();
+    await expect(detail.getByRole("heading", {name: "Revision 1 · Pause Approved"})).toBeVisible();
+    await expect(detail.getByRole("heading", {name: "Application timeline"})).toBeVisible();
+    await expect(detail.getByRole("button")).toHaveCount(0);
+    await expect(detail.getByLabel("Review note", {exact: false})).toHaveCount(0);
+    await expect(page.getByText("Edit Raid Rosters", {exact: true})).toBeVisible();
+
+    await context.clearCookies();
+    await checkpoint();
+    await page.goto(url + "/account.html");
+    await expect(notice).toContainText("You can still apply");
+    await expect(page.getByRole("button", {name: "Create account & apply"})).toBeEnabled();
+    for (const client of [approved, reopened]) {
+      const [name, value] = client.cookie.split("=");
+      await context.addCookies([{name: name!, value: value!, url}]);
+      await checkpoint();
+      await page.reload();
+      await expect(page.getByText("Current guild rules", {exact: true})).toBeVisible();
+      await expect(notice).toContainText("temporarily paused");
+      if (client === approved) {
+        await expect(page.getByText("APPROVED", {exact: true})).toBeVisible();
+        await expect(page.getByRole("button", {name: "Check now"})).toHaveCount(0);
+        await expect(page.getByText(/Automatic checks run every/)).toHaveCount(0);
+        await expect(page.getByRole("link", {name: "Open character in the armory"})).toBeVisible();
+        await expect(page.getByRole("heading", {name: "Mytikas Addon"})).toHaveCount(0);
+      } else {
+        await page.getByRole("checkbox").check();
+        await page.getByRole("button", {name: "Resubmit application"}).click();
+        await expect(page.getByText("Your revised application has been submitted.")).toBeVisible();
+        await expect(page.getByText("Submission history (2)")).toBeVisible();
+      }
+    }
+  } finally {
+    if (previous === undefined) delete process.env.MEMBERSHIP_DECISIONS_PAUSED;
+    else process.env.MEMBERSHIP_DECISIONS_PAUSED = previous;
+    await context.clearCookies();
+    await context.addCookies(staffCookies);
+  }
 }
 
 async function applicantRevocation(adminPage: Page, h: Awaited<ReturnType<typeof harness>>) {

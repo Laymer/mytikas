@@ -9,14 +9,15 @@ import {
   action,
   rulesView,
   applicationView,
+  membershipPauseNotice,
   reviewDestination,
 } from "./common.js";
-let user,
+let user, membershipDecisionsPaused,
   offset = 0,
   filter = "PENDING";
 async function render() {
   const me = await api("/api/auth/me");
-  ({ user } = me);
+  ({ user, membershipDecisionsPaused } = me);
   rosterNavigation(me);
   const root = $("#workspace");
   root.replaceChildren();
@@ -32,6 +33,7 @@ async function render() {
     root.append(a);
     return;
   }
+  if (membershipDecisionsPaused) root.append(membershipPauseNotice());
   const bar = node("div", undefined, "toolbar");
   bar.append(
     node("span", `${user.email} · ${user.role}`, "meta"),
@@ -121,7 +123,7 @@ async function loadQueue() {
 async function loadDetail(id) {
   const data = await api(`/api/admin/applications/${encodeURIComponent(id)}`),
     root = $("#detail"),
-    view = applicationView(data);
+    view = applicationView(data, membershipDecisionsPaused);
   root.replaceChildren(view);
   view.append(
     node("p", `Account: ${data.account.email}`, "meta"),
@@ -131,14 +133,6 @@ async function loadDetail(id) {
       "meta",
     ),
   );
-  const label = node("label", "Review note (visible to applicant)");
-  label.htmlFor = "review-note";
-  const note = node("textarea");
-  note.id = "review-note";
-  note.maxLength = 1000;
-  note.rows = 2;
-  view.append(label, note);
-  const actions = node("div", undefined, "actions");
   const available = {
     SUBMITTED: [
       ["approve", "Approve"],
@@ -154,16 +148,27 @@ async function loadDetail(id) {
     JOINED: user.role === "ADMIN" ? [["remove", "Remove membership"]] : [],
     REMOVED: user.role === "ADMIN" ? [["restore", "Restore membership"]] : [],
   };
-  for (const [key, title] of available[data.application.status])
-    actions.append(
-      action(title, async () => {
-        await api(`/api/admin/applications/${id}/${key}`, { note: note.value });
-        await loadDetail(id);
-        await loadQueue();
-        message("Application updated.", true);
-      }),
-    );
-  view.append(actions);
+  const decisions = available[data.application.status];
+  if (!membershipDecisionsPaused && decisions?.length) {
+    const label = node("label", "Review note (visible to applicant)");
+    label.htmlFor = "review-note";
+    const note = node("textarea");
+    note.id = "review-note";
+    note.maxLength = 1000;
+    note.rows = 2;
+    view.append(label, note);
+    const actions = node("div", undefined, "actions");
+    for (const [key, title] of decisions)
+      actions.append(
+        action(title, async () => {
+          await api(`/api/admin/applications/${id}/${key}`, { note: note.value });
+          await loadDetail(id);
+          await loadQueue();
+          message("Application updated.", true);
+        }),
+      );
+    view.append(actions);
+  }
   const deliveries = node("details");
   deliveries.append(node("summary", "Submission notifications"));
   for (const j of data.notifications)

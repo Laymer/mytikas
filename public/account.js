@@ -11,6 +11,7 @@ import {
   applicationFields,
   submissionBody,
   applicationView,
+  membershipPauseNotice,
   reviewDestination,
 } from "./common.js";
 async function submitApplication(path, body, previousRevision = 0) {
@@ -52,6 +53,7 @@ async function render() {
     return;
   }
   root.replaceChildren();
+  if (me.membershipDecisionsPaused) root.append(membershipPauseNotice());
   if (!user) {
     document.querySelector("h1").textContent="Answer the summit.";
     const rules = await api("/api/rules"),
@@ -119,9 +121,9 @@ async function render() {
   root.dataset.revision = String(
     Math.max(...data.submissions.map((s) => s.revision)),
   );
-  const view = applicationView(data);
+  const view = applicationView(data, me.membershipDecisionsPaused);
   root.append(view);
-  if (data.application.status === "APPROVED")
+  if (data.application.status === "APPROVED" && !me.membershipDecisionsPaused)
     view.append(
       action("Check now", async () => {
         await api("/api/application/check", {});
