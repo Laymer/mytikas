@@ -73,3 +73,19 @@ Use approved dedicated accounts/recipients and real characters. Respect 60-secon
 - Verify keyboard-only dialog/focus and actual-device horizontal scrolling. Use a genuinely separate network without VPN for HTTPS/session behavior, outage/Pages status, restart persistence, same-digest recreation/tunnel recovery and the actual-backup restore drill. Same-host automation is insufficient. Induce transport failures/races only in isolated fixtures.
 
 After evidence and operator signoff, make a separate closeout PR recording actual outcomes and open failures. Validate the old Pages fallback at its project URL where necessary without transferring the live domain to satisfy a stale row. Only then disable the old publishing workflow and add its notice; retain repository/history. Create an annotated accepted-release tag (for example unused `v1.0.0`) on the **deployed and accepted source SHA**, recording any separate docs commit, digest, migrations, CI and recovery point. Managed cloud hosting, actual Intel Mac handoff, alternate characters, more rosters and scheduling remain deferred.
+
+## Member Home and Discord moderation
+
+Keep the existing session secret, email encryption key and application webhook. Store the following additional settings in the active deployment's private configuration. Machine transfers include them with the private configuration and the database dump. The dump includes release ZIPs, moderation records, warning delivery state, linked accounts and sessions.
+
+| Process | Setting | Value |
+| --- | --- | --- |
+| Worker | ADDON_RELEASE_TOKEN | Fine-grained GitHub credential with Contents read access to the private Mytikas-Monster/OlympusMytikas repository |
+| Web and worker | DISCORD_GUILD_ID, DISCORD_BOT_TOKEN | Numeric guild ID and token for the guild-installed Olympus Mytikas bot |
+| Worker | DISCORD_BLACKLIST_CHANNEL_ID | Numeric ID copied from the reporting channel with Discord Developer Mode enabled |
+| Web | DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET | OAuth application credentials |
+| Web | DISCORD_INVITE_URL | Guild invitation URL |
+
+Register the redirect URI `https://app.mytikas.monster/api/discord/callback`. Enable Message Content on the Discord application. Grant the bot View Channel, Read Message History and Send Messages in the designated channel. The worker reads channel history through the REST API every ten seconds and verifies the channel's guild before importing. A committed page advances the per-channel checkpoint. After downtime the worker resumes there. Nightly checks use the last elapsed 03:00 Europe/Budapest boundary.
+
+Use the deployment procedure above to verify the backup and stage the pinned image, with membership writes paused and the worker stopped. Apply migrations and runtime grants. With the new image and protected worker configuration, run `node dist/blacklist-preview.js` as a one-shot worker command. This reads history and prints counts. Rehearse warnings in the designated test channel against a separate rehearsal database before using the production channel. Start the production worker and confirm its checkpoint has reached the preview's last message before reopening membership decisions. Review the Blacklist dashboard and worker health. On Member Home verify Discord linking with a consenting member and compare both downloaded ZIP hashes with their release assets. Verify a signed-out download is refused. After the next nightly run check timestamps, observed membership and delivery state for each active report.

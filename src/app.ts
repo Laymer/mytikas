@@ -1,3 +1,6 @@
+import { installMember } from "./member.js";
+import { eligibleSql } from "./addon.js";
+import { blocked, moderationLock } from "./blacklist.js";
 import {
   issueToken,
   consumeToken,
@@ -277,12 +280,14 @@ export function createApp(
     );
     return { user: u, csrfToken: req.session.csrf };
   }
+  installMember(app,pool,cfg.origin,authenticated,admin);
   app.get("/api/auth/me", async (req, res) => {
     req.session.csrf ||= randomBytes(32).toString("hex");
     res.json({
       user: req.user || null,
       csrfToken: req.session.csrf,
       activated: !!req.user,
+      canDownloadAddon: req.user ? !!(await pool.query(eligibleSql,[req.user.id])).rowCount : false,
       canViewRosters: req.user ? await rosterAccess(pool, req.user.id) : false,
       canEditRosters: req.user?.role === "ADMIN",
     });
@@ -311,6 +316,7 @@ export function createApp(
       throw new HttpError(429, "Please wait before requesting another email.");
     const hash = await hashPassword(pass);
     const u = await transaction(pool, async (c) => {
+      await c.query(moderationLock);
       const {
         rows: [user],
       } = await c.query(
@@ -320,8 +326,8 @@ export function createApp(
       const {
         rows: [application],
       } = await c.query(
-        `INSERT INTO applications(user_id,character_name,character_key,status) VALUES ($1,$2,$3,'PENDING_EMAIL') RETURNING *`,
-        [user.id, input.name, input.key],
+        `INSERT INTO applications(user_id,character_name,character_key,status) VALUES ($1,$2,$3,$4) RETURNING *`,
+        [user.id, input.name, input.key, await blocked(c,input.key) ? "BLACKLISTED" : "PENDING_EMAIL"],
       );
       await acceptSubmission(
         c,
@@ -428,6 +434,7 @@ export function createApp(
   });
   app.post("/api/auth/verify-email", authLimit, async (req, res) => {
     await transaction(pool, async (c) => {
+      await c.query(moderationLock);
       const u = await consumeToken(c, req.body.token, "VERIFY");
       await c.query("UPDATE users SET email_verified_at=now() WHERE id=$1", [
         u.id,
@@ -517,6 +524,7 @@ export function createApp(
     const input = applicationInput(req.body),
       id = await ownerId(req);
     await transaction(pool, async (c) => {
+      await c.query(moderationLock);
       const {
         rows: [a],
       } = await c.query("SELECT * FROM applications WHERE id=$1 FOR UPDATE", [
@@ -527,8 +535,8 @@ export function createApp(
       const {
         rows: [updated],
       } = await c.query(
-        `UPDATE applications SET character_name=$2,character_key=$3,revision=revision+1,status='SUBMITTED',updated_at=now(),last_check_at=NULL,check_result=NULL,next_check_at=NULL,check_token=NULL,check_started_at=NULL WHERE id=$1 RETURNING *`,
-        [id, input.name, input.key],
+        `UPDATE applications SET character_name=$2,character_key=$3,revision=revision+1,status=$4,updated_at=now(),last_check_at=NULL,check_result=NULL,next_check_at=NULL,check_token=NULL,check_started_at=NULL WHERE id=$1 RETURNING *`,
+        [id, input.name, input.key, await blocked(c,input.key) ? "BLACKLISTED" : "SUBMITTED"],
       );
       await acceptSubmission(
         c,
@@ -559,6 +567,7 @@ export function createApp(
         "REJECTED",
         "REOPENED",
         "JOINED",
+        "BLACKLISTED",
         "REMOVED",
       ].includes(status)
     )

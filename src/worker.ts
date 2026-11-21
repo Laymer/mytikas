@@ -1,3 +1,5 @@
+import { reportsTick, scanTick, warningTick } from "./blacklist.js";
+import { syncReleases } from "./addon.js";
 import { emailTick, smtpSender } from "./email.js";
 import { classTick } from "./classes.js";
 import { pathToFileURL } from "node:url";
@@ -58,7 +60,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     await writeFile(process.env.WORKER_ID_FILE || "/tmp/mytikas-worker-id", id, { mode: 0o600 });
     const running = () => !controller.signal.aborted;
     const send = smtpSender(cfg);
+    const integration = (name: string, task: () => Promise<void>, interval: number) =>
+      runLoop(name, async () => {
+        await task();
+        await pool.query("INSERT INTO integration_health VALUES($1,now()) ON CONFLICT(lane) DO UPDATE SET succeeded_at=now()", [name]);
+      }, controller.signal, interval);
     await Promise.all([
+      integration("blacklist-history", () => reportsTick(pool), 10000),
+      integration("blacklist-armory", () => scanTick(pool), 30000),
+      integration("blacklist-warnings", () => warningTick(pool,cfg.origin), 30000),
+      integration("addon", () => syncReleases(pool), 300000),
       runLoop("email", () => emailTick(pool,cfg,send), controller.signal),
       runLoop("classes", () => classTick(pool), controller.signal),
       runLoop("discord", () => discordTick(pool, cfg.discordWebhook, cfg.origin, running), controller.signal),

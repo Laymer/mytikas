@@ -273,3 +273,6 @@ button:disabled {
 .role-tank {color:#65acff;}.role-healer {color:#77e899;}.role-dps {color:#ff8383;}
 .class-Warrior{color:#C79C6E}.class-Paladin{color:#F58CBA}.class-Hunter{color:#ABD473}.class-Rogue{color:#FFF569}.class-Priest{color:#FFFFFF}.class-Shaman{color:#429aff}.class-Mage{color:#69CCF0}.class-Warlock{color:#9482C9}.class-Druid{color:#FF7D0A}.class-unknown{color:#d1d1d1}
 dialog {background:#171b23;color:#eee;border:1px solid #b99b59;border-radius:8px;max-width:90vw;padding:24px;}dialog::backdrop{background:#000a;}
+
+.checksum { overflow-wrap: anywhere; }
+header nav { flex-wrap: wrap; }

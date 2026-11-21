@@ -1,3 +1,4 @@
+import { memberBrowser } from "./member-browser.js";
 import { chromium, firefox, webkit, expect } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import assert from "node:assert/strict";
@@ -48,6 +49,7 @@ try {
     page.getByRole("link", { name: "Raid Roster", exact: true }),
   ).toBeVisible();
   await checkpoint();
+  await memberBrowser(page,h);
   await page.getByRole("link", { name: "Admin panel" }).click();
   await page.getByText("Edit Raid Rosters", { exact: true }).click();
   const first = page.locator(".roster-cell").first();
