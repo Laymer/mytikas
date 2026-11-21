@@ -69,7 +69,9 @@ export async function memberBrowser(
   await checkpoint();
   await page.reload();
   await expect(page.getByText("Officer fixture")).toBeVisible();
-  await new Client(url).signup("Absent Character");
+  const blockedMember = new Client(url);
+  await blockedMember.signup("Absent Character");
+  const application = (await blockedMember.application()).application;
   await h.pool.query("INSERT INTO blacklist_checkpoint VALUES('12','12345')");
   await h.pool.query(
     "INSERT INTO blacklist_checks VALUES('absent character',current_date,now(),'MATCH',true)",
@@ -78,32 +80,81 @@ export async function memberBrowser(
     "INSERT INTO blacklist_warnings(character_key,character_name,delivered_id) VALUES ('absent character','Absent Character',NULL),('absent character','Absent Character','7654')",
   );
   await h.pool.query("INSERT INTO blacklist_reports SELECT '12346',guild_id,channel_id,reporter_id,reported_at,'Past Report','past report','Old report',now(),$1,'Corrected' FROM blacklist_reports WHERE message_id='12345'",[h.admin.id]);
+  await transaction(h.pool, c => importReport(c, {
+    id: "12348", channel_id: "12", author: {id: "678"}, timestamp: new Date(),
+    content: "Name: Absent\nSurname: Neighbor\nReason: Neighbor report",
+  }, "34", "12"));
   await checkpoint();
   await page.reload();
-  await expect(page.getByText("Past Report",{exact:true})).toBeVisible();
-  await expect(page.getByText(/Warning #.*Pending/)).toBeVisible();
-  await page.getByLabel("Character name").fill("Absent");
+
+  const table = page.getByRole("table", {name: "Blacklist reports"});
+  const reportRow = (name: string) => table.getByRole("row").filter({
+    has: page.getByRole("rowheader", {name, exact: true}),
+  });
+  const target = reportRow("Absent Character"), neighbor = reportRow("Absent Neighbor"), past = reportRow("Past Report");
+  await expect(page.getByRole("table")).toHaveCount(1);
+  await expect(table.getByRole("columnheader")).toHaveText(["Character", "Report", "Guild checks", "Moderation"]);
+  await expect(table.getByRole("rowheader")).toHaveCount(3);
+  const bot = page.getByRole("region", {name: "Discord bot"});
+  await expect(bot).toContainText("Last successful Discord history check");
+  await expect(bot).toContainText("Last processed channel message 12345");
+  await expect(target).toContainText("Officer fixture");
+  await expect(target).toContainText("Reported by 432");
+  await expect(target).toContainText("MATCH");
+  await expect(target.getByRole("link", {name: "Source message"})).toHaveAttribute("href", "https://discord.com/channels/34/12/12345");
+  await expect(target.getByRole("link", {name: /Application/})).toHaveAttribute("href", "/admin.html#" + application.id);
+  await expect(neighbor).toContainText("Neighbor report");
+  await expect(neighbor).toContainText("Awaiting armory check");
+  await expect(neighbor).toContainText("No matching application.");
+  await expect(neighbor.getByRole("link", {name: "Source message"})).toHaveAttribute("href", "https://discord.com/channels/34/12/12348");
+  await expect(past).toContainText("Corrected");
+  await expect(past.getByText("Void report", {exact:true})).toHaveCount(0);
+  const region = page.getByRole("region", {name: "Report history"});
+  await region.focus();
+  await expect(region).toBeFocused();
+  const layout = await region.evaluate(el => {
+    el.scrollLeft = el.scrollWidth;
+    return { scrollLeft: el.scrollLeft, viewport: innerWidth, pageWidth: document.documentElement.scrollWidth };
+  });
+  expect(layout.scrollLeft).toBeGreaterThan(0);
+  expect(layout.pageWidth).toBeLessThanOrEqual(layout.viewport + 1);
+
+  const search = page.getByRole("search");
+  await search.getByLabel("Character name").fill("Absent");
   await checkpoint();
-  await page.getByRole("button", { name: "Search" }).click();
-  await expect(page.getByText(/Warning #.*Pending/)).toBeVisible();
-  await expect(page.getByText(/Warning #.*Delivered/)).toBeVisible();
-  await page.getByLabel("Correction reason").fill("Wrong character");
-  await page.getByRole("button", { name: "Void mistaken report" }).click();
-  await expect(page.getByText(/Voided by/)).toBeVisible();
-  await expect(page.getByText(/Warning #.*Withdrawn/)).toBeVisible();
-  await expect(page.getByText(/Warning #.*Delivered/)).toBeVisible();
+  await search.getByRole("button", {name: "Search"}).click();
+  await expect(table.getByRole("rowheader")).toHaveCount(2);
+  await expect(past).toHaveCount(0);
+  await expect(target.getByText(/Warning #.*Pending/)).toBeVisible();
+  await expect(target.getByText(/Warning #.*Delivered/)).toBeVisible();
+  const targetReason = target.getByLabel("Correction reason");
+  await expect(targetReason).toBeHidden();
+  await target.getByText("Void report", {exact: true}).focus();
+  await page.keyboard.press("Enter");
+  await expect(targetReason).toBeVisible();
+  await expect(neighbor.getByLabel("Correction reason")).toBeHidden();
+  await targetReason.fill("Wrong character");
+  await target.getByRole("button", { name: "Void mistaken report" }).click();
+  await expect(target).toContainText("Wrong character");
+  await expect(target).toContainText("Voided by " + h.admin.id);
+  await expect(target.getByRole("rowheader")).toBeFocused();
+  await expect(target.getByText(/Warning #.*Withdrawn/)).toBeVisible();
+  await expect(target.getByText(/Warning #.*Delivered/)).toBeVisible();
+  await expect(neighbor.getByText("Void report", {exact:true})).toBeVisible();
+  await expect(neighbor).not.toContainText("Wrong character");
   // A reconciliation scan can later confirm Discord accepted the withdrawn job.
   await h.pool.query(
     "UPDATE blacklist_warnings SET delivered_id='7655' WHERE character_key='absent character' AND withdrawn_at IS NOT NULL",
   );
   await checkpoint();
   await page.reload();
-  await expect(page.getByText(/Warning #.*Delivered/)).toHaveCount(2);
-  await expect(page.getByText(/Warning #.*Withdrawn/)).toHaveCount(0);
-  await page.getByLabel("Character name").fill("No such fixture");
+  await expect(target.getByText(/Warning #.*Delivered/)).toHaveCount(2);
+  await expect(target.getByText(/Warning #.*Withdrawn/)).toHaveCount(0);
+  await search.getByLabel("Character name").fill("No such fixture");
   await checkpoint();
-  await page.getByRole("button", {name:"Search"}).click();
+  await search.getByRole("button", {name:"Search"}).click();
   await expect(page.getByText("No matching reports.")).toBeVisible();
+  await expect(page.getByRole("rowheader")).toHaveCount(0);
   for (const width of [390, 1200]) {
     await page.setViewportSize({ width, height: 844 });
     await checkpoint();
@@ -432,6 +483,9 @@ async function applicantRevocation(adminPage: Page, h: Awaited<ReturnType<typeof
     await checkpoint();
     await applicant.goto(url + "/blacklist.html?q=Absent");
     await expect(applicant.getByRole("alert")).toHaveText("Admin permission required.");
+    await expect(applicant.getByRole("table")).toHaveCount(0);
+    await expect(applicant.getByRole("region", {name:"Report history"})).toHaveCount(0);
+    await expect(applicant.getByRole("link", {name:"Source message"})).toHaveCount(0);
     await expect(applicant.getByText(reason, {exact: true})).toHaveCount(0);
     await checkpoint(false);
   } finally {
