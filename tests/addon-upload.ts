@@ -19,20 +19,24 @@ const formerPause = process.env.MEMBERSHIP_DECISIONS_PAUSED;
 async function upload(
   actor: Client,
   archive = bytes,
-  overrides: Record<string, string> = {},
+  overrides: Record<string, string | undefined> = {},
   path = route,
 ) {
+  const headers = new Headers({
+    Cookie: actor.cookie,
+    "X-CSRF-Token": actor.csrf,
+    Origin: h.cfg.origin,
+    "Content-Type": "application/zip",
+    "X-Addon-Version": version,
+    "X-Addon-SHA256": sha(archive),
+  });
+  for (const [name, value] of Object.entries(overrides)) {
+    if (value === undefined) headers.delete(name);
+    else headers.set(name, value);
+  }
   return fetch(h.cfg.origin + path, {
     method: "POST",
-    headers: {
-      Cookie: actor.cookie,
-      "X-CSRF-Token": actor.csrf,
-      Origin: h.cfg.origin,
-      "Content-Type": "application/zip",
-      "X-Addon-Version": version,
-      "X-Addon-SHA256": sha(archive),
-      ...overrides,
-    },
+    headers,
     body: new Uint8Array(archive),
   });
 }
@@ -106,6 +110,47 @@ try {
     400,
   );
   assert.equal((await upload(admin, Buffer.alloc(8_000_001))).status, 413);
+  const detected = { "X-Addon-Version": undefined };
+  const skipped = {
+    ...detected,
+    "X-Addon-Checksum-Mode": "skip",
+    "X-Addon-SHA256": undefined,
+  };
+  for (const [body, headers, expected] of [
+    [bytes, { ...detected, "X-Addon-SHA256": undefined }, /supply.*SHA-256/i],
+    [
+      bytes,
+      { ...detected, "X-Addon-Checksum-Mode": "other" },
+      /verify or skip/,
+    ],
+    [
+      bytes,
+      { ...detected, "X-Addon-Checksum-Mode": "skip" },
+      /omit the supplied SHA-256/i,
+    ],
+    [
+      bytes,
+      { ...skipped, "X-Addon-Version": "3.2.1" },
+      /does not match.*2\.3\.4/,
+    ],
+    [packageZip("1.0.0"), skipped, /1\.0\.0 requires the original/],
+    [
+      packageZip(version, (z) => z.deleteFile(prefix + "OlympusMytikas.toc")),
+      skipped,
+      /Include OlympusMytikas\/OlympusMytikas\.toc/,
+    ],
+    [
+      packageZip(version, (z) => z.deleteFile(prefix + "Bootstrap.lua")),
+      detected,
+      /include that file/,
+    ],
+    [packageZip("nightly"), detected, /stable ## Version: X\.Y\.Z/],
+  ] as const) {
+    const rejected = await upload(admin, body, headers);
+    assert.equal(rejected.status, 400);
+    assert.match((await rejected.json()).error, expected);
+  }
+  assert.equal((await upload(moderator, bytes, skipped)).status, 403);
   assert.equal(
     (await h.pool.query("SELECT version FROM addon_releases")).rowCount,
     0,
@@ -114,6 +159,7 @@ try {
   process.env.MEMBERSHIP_DECISIONS_PAUSED = "1";
   const notes = "Δοκιμή\n50% complete 🔧",
     created = await upload(admin, bytes, {
+      ...detected,
       "X-Addon-Notes": encodeURIComponent(notes),
     });
   assert.equal(created.status, 201);
@@ -136,7 +182,12 @@ try {
       Buffer.from("-- Different packaged bytes"),
     ),
   );
-  assert.equal((await upload(admin)).status, 409);
+  const duplicate = await upload(admin, bytes, skipped);
+  assert.equal(duplicate.status, 409);
+  assert.equal(
+    (await duplicate.json()).error,
+    "Version " + version + " has already been published.",
+  );
   assert.equal((await upload(admin, alternative)).status, 409);
   assert.deepEqual((await applicant.request("/api/addon")).data, [metadata]);
   const downloaded = await fetch(h.cfg.origin + "/api/addon/" + version, {
@@ -145,6 +196,16 @@ try {
   assert.equal(downloaded.status, 200);
   assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()), bytes);
   assert.equal((await anonymous.request("/api/addon/" + version)).status, 401);
+  const noComparison = packageZip("2.3.8");
+  const noComparisonResponse = await upload(admin, noComparison, skipped);
+  assert.equal(noComparisonResponse.status, 201);
+  const published = await noComparisonResponse.json();
+  assert.equal(published.version, "2.3.8");
+  assert.equal(published.sha256, sha(noComparison));
+  const copied = await fetch(h.cfg.origin + "/api/addon/2.3.8", {
+    headers: { Cookie: applicant.cookie },
+  });
+  assert.deepEqual(Buffer.from(await copied.arrayBuffer()), noComparison);
 
   const racingVersion = "2.3.5",
     racingBytes = packageZip(racingVersion);

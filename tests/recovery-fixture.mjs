@@ -2,6 +2,8 @@ import { createCipheriv } from 'node:crypto';
 export const recoveryUser = '10000000-0000-0000-0000-000000000001';
 export const recoveryMember = '10000000-0000-0000-0000-000000000002';
 export const recoveryRemoved = '10000000-0000-0000-0000-000000000003';
+export const recoveryPublicFile = '10000000-0000-0000-0000-000000000008';
+export const recoveryPrivateFile = '10000000-0000-0000-0000-000000000009';
 export function recoveryFixture(key) {
   const iv=Buffer.alloc(12,7), cipher=createCipheriv('aes-256-gcm',Buffer.from(key,'hex'),iv);
   const mail={to:'recovery-only@example.test',subject:'Recovery fixture',text:'Private fixture token, never log'};
@@ -35,6 +37,10 @@ INSERT INTO blacklist_checkpoint VALUES('503','501');
 INSERT INTO blacklist_checks(character_key,scan_day,result,present) VALUES('fixture character',current_date,'MATCH',true);
 INSERT INTO blacklist_warnings(character_key,character_name,after_id) VALUES('fixture character','Fixture Character','501');
 INSERT INTO addon_releases VALUES('0.0.1',now(),'Recovery fixture',repeat('0',64),decode('00ff','hex'));
+INSERT INTO addon_files(id,uploaded_by,filename,visibility,notes,file_count,request_sha256,content)
+ SELECT '${recoveryPublicFile}',id,'Public notes.txt','public','Recovery fixture',1,repeat('4',64),decode('68656c6c6f','hex') FROM users WHERE role='ADMIN' ORDER BY id LIMIT 1;
+INSERT INTO addon_files(id,uploaded_by,filename,visibility,notes,file_count,request_sha256,content)
+ SELECT '${recoveryPrivateFile}',id,'Members only.dat','private','Recovery fixture',1,repeat('5',64),decode('00ff8047','hex') FROM users WHERE role='ADMIN' ORDER BY id LIMIT 1;
 INSERT INTO discord_links VALUES('${recoveryUser}','505','Recovery fixture');
 INSERT INTO email_limits(key,attempts,reset_at) VALUES (repeat('3',64),3,'2100-01-01');
 INSERT INTO sessions(sid,sess,expire) VALUES ('recovery-version-seven','{"userId":"${recoveryUser}","authVersion":7,"cookie":{"secure":true}}','2100-01-01');

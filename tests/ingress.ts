@@ -12,6 +12,27 @@ try {
   for (const name of ['MYTIKAS_DEMO', 'DEMO_PASSWORD', 'DEPLOYMENT_PROFILE', 'PUBLIC_SITE_ORIGIN', 'INGRESS_MODE', 'PORT', 'DISCORD_WEBHOOK_URL']) delete process.env[name];
   Object.assign(process.env, { DATABASE_URL: 'postgres://test:test@localhost/test', SESSION_SECRET: 'a'.repeat(40), APP_ORIGIN: 'http://localhost:8080' });
   assert.equal(config().ingressMode, 'none');
+  const local = { ...process.env };
+  for (const [key, value, error] of [
+    ['SESSION_SECRET', 'short', /SESSION_SECRET/],
+    ['APP_ORIGIN', 'http://localhost:8080/path', /APP_ORIGIN/],
+    ['PUBLIC_SITE_ORIGIN', 'https://example.test/', /PUBLIC_SITE_ORIGIN/],
+    ['DEPLOYMENT_PROFILE', 'other', /DEPLOYMENT_PROFILE/],
+    ['INGRESS_MODE', 'unknown', /INGRESS_MODE/],
+    ['INGRESS_MODE', 'cloudflare-loopback', /public profile/],
+    ['INGRESS_MODE', 'proxy-loopback', /must not trust/],
+    ['SMTP_PORT', '65536', /SMTP_PORT/],
+    ['SMTP_USER', 'fixture', /configured together/],
+    ['EMAIL_OUTBOX_KEY', 'not-a-key', /32 random bytes/],
+    ['EMAIL_OUTBOX_KEY', local.SESSION_SECRET, /independent/],
+    ['DISCORD_WEBHOOK_URL', 'https://discord.com:8443/api/webhooks/123/fixture', /official/],
+  ] as const) {
+    process.env = { ...local, [key]: value };
+    assert.throws(config, error);
+  }
+  process.env = { ...local, DISCORD_WEBHOOK_URL: 'https://discord.com:443/api/webhooks/123/fixture' };
+  assert.equal(config().discordWebhook, process.env.DISCORD_WEBHOOK_URL);
+  process.env = { ...local };
   process.env.PORT = '0';
   assert.throws(config, /PORT/);
   process.env.PORT = '8080';
@@ -20,6 +41,9 @@ try {
   assert.throws(config, /HTTPS/);
   Object.assign(process.env, { APP_ORIGIN: 'https://app.mytikas.monster', PUBLIC_SITE_ORIGIN: 'https://mytikas.monster', INGRESS_MODE: 'cloudflare-loopback' });
   assert.equal(config().secureCookies, true);
+  delete process.env.SMTP_HOST;
+  assert.throws(config, /requires EMAIL_OUTBOX_KEY, SMTP_HOST and EMAIL_FROM/);
+  process.env.SMTP_HOST='smtp.example.test';
   process.env.DEMO_PASSWORD = 'demo-only';
   assert.throws(config, /demo credentials/);
   delete process.env.DEMO_PASSWORD;

@@ -1,12 +1,14 @@
 import { createPool } from '../db.js';
 import { checkMembership } from '../armory.js';
 import { fixtureVerifier, states } from './fixtures.js';
+import { requireDemoMode, requireDemoDataset } from './dataset.js';
+requireDemoMode();
 const pool = createPool(process.env.DATABASE_URL || '');
 const [command, email, state] = process.argv.slice(2);
 try {
+  await requireDemoDataset(pool);
   if (command==='ready') {
-    if (!(await pool.query("SELECT 1 FROM demo_dataset WHERE version='mytikas-demo-v1'")).rowCount) throw new Error('Demo seed not ready');
-    await pool.query('SELECT 1 FROM demo_fixtures LIMIT 1');
+    console.log('Demo dataset ready.');
   } else if (command==='accounts' || command==='summary') {
     console.table((await pool.query(command==='accounts' ? 'SELECT u.email,u.role,a.status FROM users u LEFT JOIN applications a ON a.user_id=u.id ORDER BY u.email' : 'SELECT a.status,count(*) FROM applications a GROUP BY a.status ORDER BY a.status')).rows);
     if (command==='accounts') console.log('Shared demo password:',process.env.DEMO_PASSWORD);

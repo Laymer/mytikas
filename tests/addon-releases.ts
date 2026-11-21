@@ -16,6 +16,13 @@ for (const [configure, error] of [
   ],
   [(zip: Zip) => zip.deleteFile(prefix + "Bootstrap.lua"), /manifest/],
   [
+    (zip: Zip) => {
+      zip.addFile(prefix + "Assets/Icon.txt", Buffer.from("First asset"));
+      zip.addFile(prefix + "assets/Theme.txt", Buffer.from("Second asset"));
+    },
+    /distinct Windows-compatible path/,
+  ],
+  [
     (zip: Zip) =>
       zip.updateFile(
         prefix + "OlympusMytikas.toc",
@@ -235,6 +242,15 @@ try {
 
   assetStatus = 200;
   invalid.assets[0]!.size--;
+  // An ordinary ZIP larger than its asset declaration must stop during the body read.
+  invalid.assets[0]!.size--;
+  await assert.rejects(syncReleases(h.pool), /response exceeds its size limit/);
+  assert.equal((await admin.request("/api/addon/1.11.0")).status, 404);
+  invalid.assets[0]!.size++;
+  const expectedDigest = invalid.assets[0]!.digest;
+  invalid.assets[0]!.digest = "";
+  await assert.rejects(syncReleases(h.pool), /SHA-256 digest/);
+  invalid.assets[0]!.digest = expectedDigest;
   downloaded.length = 0;
   await syncReleases(h.pool);
   await syncReleases(h.pool);

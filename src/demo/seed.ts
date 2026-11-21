@@ -1,7 +1,8 @@
 import { pathToFileURL } from 'node:url';
 import { createPool, transaction, type Pool } from '../db.js';
 import { hashPassword } from '../app.js';
-export const dataset = 'mytikas-demo-v1';
+import { dataset, requireDemoMode } from './dataset.js';
+export { dataset } from './dataset.js';
 export async function seed(pool: Pool, password: string) {
   if (!password || password.length < 12) throw new Error('Missing demo password');
   const hash = await hashPassword(password);
@@ -10,7 +11,7 @@ export async function seed(pool: Pool, password: string) {
     await c.query('CREATE TABLE IF NOT EXISTS demo_dataset (version text PRIMARY KEY)');
     const marker = await c.query('SELECT version FROM demo_dataset');
     if (marker.rowCount) {
-      if (marker.rows[0].version !== dataset) throw new Error('Unsupported demo dataset');
+      if (marker.rowCount !== 1 || marker.rows[0].version !== dataset) throw new Error('Unsupported demo dataset');
       return;
     }
     if ((await c.query('SELECT 1 FROM users UNION ALL SELECT 1 FROM applications UNION ALL SELECT 1 FROM rules WHERE actor_id IS NOT NULL OR NOT prototype LIMIT 1')).rowCount)
@@ -44,6 +45,7 @@ export async function seed(pool: Pool, password: string) {
   });
 }
 if (process.argv[1] && import.meta.url===pathToFileURL(process.argv[1]).href) {
+  requireDemoMode();
   const pool = createPool(process.env.DATABASE_URL || '');
   try { await seed(pool,process.env.DEMO_PASSWORD || ''); console.log('Demo dataset ready.'); }
   finally { await pool.end(); }

@@ -1,0 +1,61 @@
+.addon-layout {
+  display: grid;
+  gap: 1.5rem;
+  align-items: start;
+}
+.addon-layout:has(.addon-publisher) {
+  grid-template-columns: minmax(16rem, 21rem) minmax(0, 1fr);
+}
+.addon-publisher fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.addon-publisher.card { padding: 18px 20px; }
+.addon-publisher.card h2 { font-size: 28px; margin-bottom: 8px; }
+.addon-publisher label { margin: 9px 0 3px; }
+.addon-publisher input[type="file"], .addon-publisher select, .addon-publisher textarea {
+  padding: 6px 8px;
+  min-height: 40px;
+}
+.addon-publisher textarea { height: 54px; }
+.addon-publisher p.meta { margin: 5px 0; font-size: 13px; }
+.addon-publisher [role="status"]:empty { display: none; }
+.addon-publisher button { min-height: 40px; padding: 8px 12px; margin-top: 8px; }
+.addon-publisher form {
+  margin-top: 10px;
+  border-top: 1px solid #ba965c40;
+}
+.addon-publisher .checksum-toggle {
+  text-transform: none;
+  letter-spacing: normal;
+  background: transparent;
+}
+.addon-publisher .checksum-toggle[aria-pressed="true"] {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+.addon-publisher .checksum-toggle[aria-pressed="true"]::before { content: "✓ "; }
+.addon-file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.addon-file-list li { padding: 0.8rem 0; overflow-wrap: anywhere; }
+.addon-file-list li + li { border-top: 1px solid #ba965c40; }
+.addon-file-list a { color: var(--gold); text-decoration: underline; text-underline-offset: .16em; }
+.addon-page .addon-file-list details { padding: 0; margin: 4px 0; border: 0; }
+.addon-file-list li p { margin: 4px 0; }
+.addon-file-list li button { min-height: 40px; padding: 8px 12px; margin-top: 4px; }
+.file-visibility {
+  font-size: 0.85rem;
+  margin-inline-start: 0.8rem;
+  color: #c8c3a6;
+}
+@media (max-width: 780px) {
+  .addon-layout:has(.addon-publisher) { grid-template-columns: minmax(0, 1fr); }
+}
+.addon-page { padding-top: clamp(18px, 2vw, 30px); }
+.addon-page .portal-intro { padding-bottom: 10px; margin-bottom: 16px; }
+.addon-page .portal-intro h1 { font-size: clamp(38px, 4.5vw, 60px); margin: 0; }

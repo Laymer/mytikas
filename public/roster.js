@@ -14,7 +14,7 @@ export function rosterNavigation(me) {
   const nav = document.querySelector("header nav");
   for(const el of nav.querySelectorAll("[data-member-link]")) el.remove();
   const admin = me.user?.role === "ADMIN";
-  for(const [show,label,url] of [[me.canDownloadAddon || admin,"Mytikas Addon","/addon.html"],[admin,"Blacklist","/blacklist.html"]]){
+  for(const [show,label,url] of [[true,"Mytikas Addon","/addon.html"],[admin,"Blacklist","/blacklist.html"]]){
     if(show){const a=node("a",label);a.href=url;a.dataset.memberLink="true";nav.append(a);}
   }
   nav.querySelector("[data-roster-link]")?.remove();

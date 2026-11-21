@@ -1,5 +1,6 @@
 // @ts-ignore Shared SQL fixture also runs in the machine container suite.
-import { recoveryFixture, recoveryRemoved } from './recovery-fixture.mjs';
+import { recoveryFixture, recoveryRemoved, recoveryPublicFile, recoveryPrivateFile } from './recovery-fixture.mjs';
+import { createHash } from 'node:crypto';
 import { emailTick, captureTransport } from '../src/email.js';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -87,6 +88,22 @@ try {
     assert.equal((await pool.query('SELECT count(*) FROM roster_slots WHERE application_id=$1',[recoveryRemoved])).rows[0].count,'0');
     const preserved=new Client(cfg.origin);preserved.cookie=c.cookie;
     assert.equal((await preserved.init()).data.user.email,'recover@example.test');
+    const guest = new Client(cfg.origin);
+    const publicFiles = (await guest.request('/api/addon-files')).data;
+    assert.deepEqual(publicFiles.map((f: {id:string})=>f.id), [recoveryPublicFile]);
+    assert.equal((await guest.request('/api/addon-files/'+recoveryPrivateFile)).status,404);
+    const restoredFiles = (await preserved.request('/api/addon-files')).data;
+    for(const [id, expected, filename, visibility] of [
+      [recoveryPublicFile,Buffer.from('hello'),'Public notes.txt','public'],
+      [recoveryPrivateFile,Buffer.from('00ff8047','hex'),'Members only.dat','private'],
+    ] as const){
+      const metadata=restoredFiles.find((f:{id:string})=>f.id===id);
+      assert.equal(metadata.filename,filename);assert.equal(metadata.visibility,visibility);
+      assert.equal(metadata.sha256,createHash('sha256').update(expected).digest('hex'));
+      assert.equal(metadata.byte_size,expected.length);
+      const copied = await fetch(cfg.origin+'/api/addon-files/'+id,{headers:{Cookie:preserved.cookie}});
+      assert.equal(copied.status,200);assert.deepEqual(Buffer.from(await copied.arrayBuffer()),expected);
+    }
     const versioned=new Client(cfg.origin);
     assert.equal((await versioned.login('fixture.recovery@example.test')).status,200);
     assert.equal((await versioned.init()).data.user.email,'fixture.recovery@example.test');

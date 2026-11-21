@@ -75,8 +75,7 @@ export function config(): Config {
   if (discordWebhook) {
     const w = new URL(discordWebhook);
     if (
-      w.protocol !== "https:" ||
-      w.hostname !== "discord.com" ||
+      w.origin !== "https://discord.com" ||
       !/^\/api\/webhooks\/\d+\/[\w-]+$/.test(w.pathname) ||
       w.username ||
       w.password ||
