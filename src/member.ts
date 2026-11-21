@@ -1,3 +1,4 @@
+import { blacklistBotStatus } from "./blacklist-status.js";
 import type { Express, RequestHandler } from "express";
 import { createHash, randomBytes } from "node:crypto";
 import { HttpError } from "./validation.js";
@@ -56,7 +57,7 @@ export function installMember(
     const search = String(req.query.q ?? "").slice(0, 200);
     const reports = await pool.query(
       `SELECT r.*,a.id AS application_id,a.status,c.result,c.checked_at,
-      (SELECT json_agg(json_build_object('id',w.id,'delivered',w.delivered_id IS NOT NULL) ORDER BY w.id DESC)
+      (SELECT json_agg(json_build_object('id',w.id,'delivered',w.delivered_id IS NOT NULL,'withdrawn',w.withdrawn_at IS NOT NULL) ORDER BY w.id DESC)
        FROM blacklist_warnings w WHERE w.character_key=r.character_key) AS warnings
       FROM blacklist_reports r LEFT JOIN applications a USING(character_key) LEFT JOIN blacklist_checks c USING(character_key)
       WHERE strpos(lower(r.character_name),lower($1))>0 ORDER BY reported_at DESC`,
@@ -64,6 +65,7 @@ export function installMember(
     );
     res.json({
       reports: reports.rows,
+      bot: await blacklistBotStatus(pool),
       checkpoints: (await pool.query("SELECT * FROM blacklist_checkpoint"))
         .rows,
     });

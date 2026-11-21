@@ -1,3 +1,4 @@
+import { reportBlacklistConfiguration } from "../src/blacklist-status.js";
 import { expect, type Page } from "@playwright/test";
 import { Client, PASS, type harness } from "./harness.js";
 import { transaction } from "../src/db.js";
@@ -26,7 +27,23 @@ export async function memberBrowser(
   ).toBeVisible();
   await checkpoint();
   await page.goto(url + "/blacklist.html");
-  await expect(page.getByText("No matching reports.")).toBeVisible();
+  await expect(page.getByText("Waiting for a current worker status report.")).toBeVisible();
+  await expect(page.getByText("No reports imported.")).toBeVisible();
+  await reportBlacklistConfiguration(h.pool, false, {DISCORD_GUILD_ID:"34"});
+  await checkpoint(); await page.reload();
+  await expect(page.getByText("Configure the bot token and blacklist channel ID on the worker to read Discord history.")).toBeVisible();
+  const configured = {DISCORD_BOT_TOKEN:"fixture-only", DISCORD_GUILD_ID:"34", DISCORD_BLACKLIST_CHANNEL_ID:"12"};
+  await reportBlacklistConfiguration(h.pool,false,configured);
+  await checkpoint(); await page.reload();
+  await expect(page.getByText("Waiting for the worker’s first successful Discord history check.")).toBeVisible();
+  await h.pool.query("INSERT INTO integration_health VALUES('blacklist-history',now())");
+  await reportBlacklistConfiguration(h.pool,true,configured);
+  await checkpoint(); await page.reload();
+  await expect(page.getByText("Discord history checks are current.")).toBeVisible();
+  await expect(page.getByText("No reports imported.")).toBeVisible();
+  await h.pool.query("UPDATE integration_health SET succeeded_at=now()-interval '16 minutes' WHERE lane='blacklist-history'");
+  await checkpoint(); await page.reload();
+  await expect(page.getByText(/Discord history checks are overdue/)).toBeVisible();
   await transaction(h.pool, async (c) => {
     await importReport(
       c,
@@ -65,6 +82,12 @@ export async function memberBrowser(
   await page.getByLabel("Correction reason").fill("Wrong character");
   await page.getByRole("button", { name: "Void mistaken report" }).click();
   await expect(page.getByText(/Voided by/)).toBeVisible();
+  await expect(page.getByText(/Warning #.*Withdrawn/)).toBeVisible();
+  await expect(page.getByText(/Warning #.*Delivered/)).toBeVisible();
+  await page.getByLabel("Character name").fill("No such fixture");
+  await checkpoint();
+  await page.getByRole("button", {name:"Search"}).click();
+  await expect(page.getByText("No matching reports.")).toBeVisible();
   for (const width of [390, 1200]) {
     await page.setViewportSize({ width, height: 844 });
     await checkpoint();

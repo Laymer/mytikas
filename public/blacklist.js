@@ -4,7 +4,7 @@ import { link } from "./member.js";
 async function render() {
   rosterNavigation(await api("/api/auth/me"));
   const q = new URLSearchParams(location.search).get("q") || "";
-  const { reports, checkpoints } = await api(
+  const { reports, checkpoints, bot } = await api(
       "/api/blacklist?q=" + encodeURIComponent(q),
     ),
     root = $("#workspace");
@@ -15,16 +15,34 @@ async function render() {
   input.value = q;
   label.append(input);
   search.append(label, node("button", "Search"));
-  root.replaceChildren(search);
-  root.append(
-    node(
-      "p",
-      checkpoints
-        .map((c) => "Last imported channel message " + c.last_id)
-        .join(" · ") || "Waiting for channel history.",
-    ),
-  );
-  if (!reports.length) root.append(node("p", "No matching reports."));
+  const descriptions = {
+    "worker-unavailable": "Waiting for a current worker status report.",
+    "missing-configuration":
+      "Configure the " +
+      new Intl.ListFormat("en").format(bot.missing) +
+      " on the worker to read Discord history.",
+    "awaiting-first-sync":
+      "Waiting for the worker’s first successful Discord history check.",
+    syncing: "Discord history checks are current.",
+    stale:
+      "Discord history checks are overdue. Review the worker and its channel permissions.",
+  };
+  const status = node("section", undefined, "card");
+  status.append(node("h2", "Discord bot"), node("p", descriptions[bot.state]));
+  if (bot.lastSyncAt)
+    status.append(
+      node(
+        "p",
+        "Last successful Discord history check · " + date(bot.lastSyncAt),
+      ),
+    );
+  for (const checkpoint of checkpoints)
+    status.append(
+      node("p", "Last processed channel message " + checkpoint.last_id),
+    );
+  root.replaceChildren(status, search);
+  if (!reports.length)
+    root.append(node("p", q ? "No matching reports." : "No reports imported."));
   root.append(...reports.map(reportCard));
 }
 function reportCard(r) {
@@ -53,7 +71,10 @@ function reportCard(r) {
     card.append(
       node(
         "p",
-        "Warning #" + w.id + " · " + (w.delivered ? "Delivered" : "Pending"),
+        "Warning #" +
+          w.id +
+          " · " +
+          (w.delivered ? "Delivered" : w.withdrawn ? "Withdrawn" : "Pending"),
       ),
     );
   if (r.voided_at)
