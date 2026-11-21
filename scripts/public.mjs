@@ -55,7 +55,7 @@ try {
   if (managed && command === 'init') throw new Error('Managed deployment secrets are preserved by import.');
   if (command === 'init') {
     mkdirSync(resolve(root, '.public'), { recursive: true, mode: 0o700 });
-    createPrivate(envFile, `POSTGRES_PASSWORD=${randomBytes(32).toString('hex')}\nSESSION_SECRET=${randomBytes(48).toString('hex')}\nEMAIL_OUTBOX_KEY=${randomBytes(32).toString('hex')}\nSMTP_HOST=\nSMTP_PORT=587\nSMTP_USER=\nSMTP_PASSWORD=\nEMAIL_FROM=\nMYTIKAS_IMAGE=\nDISCORD_WEBHOOK_URL=\nPUBLIC_UID=${process.getuid()}\nPUBLIC_GID=${process.getgid()}\n`);
+    createPrivate(envFile, `POSTGRES_PASSWORD=${randomBytes(32).toString('hex')}\nSESSION_SECRET=${randomBytes(48).toString('hex')}\nEMAIL_OUTBOX_KEY=${randomBytes(32).toString('hex')}\nSMTP_HOST=\nSMTP_PORT=587\nSMTP_USER=\nSMTP_PASSWORD=\nEMAIL_FROM=\nMYTIKAS_IMAGE=\nDISCORD_WEBHOOK_URL=\nADDON_DOWNLOADS_PAUSED=0\nPUBLIC_UID=${process.getuid()}\nPUBLIC_GID=${process.getgid()}\n`);
     privateFile(envFile);
     const existing = readFileSync(envFile, 'utf8');
     if (!/^\s*(?:export\s+)?RUNTIME_DATABASE_PASSWORD\s*=/m.test(existing))
@@ -82,7 +82,15 @@ try {
       throw new Error('MYTIKAS_IMAGE must be an immutable Mytikas application image digest.');
     for (const name of ['worker', ...(managed ? [] : ['migrate'])])
       if (services[name].image !== selected) throw new Error('Candidate service images differ.');
-    if (JSON.stringify(services.app.environment) !== JSON.stringify(services.worker.environment)) throw new Error('Candidate web/worker environments differ.');
+    const web = services.app.environment, worker = services.worker.environment;
+    const webOnly = ['ADDON_DOWNLOADS_PAUSED','DISCORD_CLIENT_ID','DISCORD_CLIENT_SECRET','DISCORD_INVITE_URL'];
+    const workerOnly = ['ADDON_RELEASE_TOKEN','DISCORD_BLACKLIST_CHANNEL_ID'];
+    for (const key of new Set([...Object.keys(web), ...Object.keys(worker)])) {
+      if (web[key] === worker[key]) continue;
+      if (webOnly.includes(key) && !Object.hasOwn(worker,key)) continue;
+      if (workerOnly.includes(key) && !Object.hasOwn(web,key)) continue;
+      throw new Error('Candidate web/worker environments differ.');
+    }
     if (!managed) {
       if (selected === 'mytikas-public') run([...dc,'build','app']);
       else run([...dc,'pull','app','worker','migrate'],{stdio:'pipe'});

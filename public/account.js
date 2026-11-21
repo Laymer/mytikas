@@ -11,7 +11,7 @@ import {
   applicationFields,
   submissionBody,
   applicationView,
-  membershipPauseNotice,
+  pauseNotice,
   reviewDestination,
 } from "./common.js";
 async function submitApplication(path, body, previousRevision = 0) {
@@ -53,7 +53,7 @@ async function render() {
     return;
   }
   root.replaceChildren();
-  if (me.membershipDecisionsPaused) root.append(membershipPauseNotice());
+  if (me.membershipDecisionsPaused || me.addonDownloadsPaused) root.append(pauseNotice(me));
   if (!user) {
     document.querySelector("h1").textContent="Answer the summit.";
     const rules = await api("/api/rules"),
@@ -108,11 +108,14 @@ async function render() {
   const data = await api("/api/application");
   if (!data.application) {
     const card = node("section", undefined, "card");
+    const staff = ["ADMIN", "MODERATOR"].includes(user.role);
     card.append(
-      node("h2", "Your staff account"),
+      node("h2", staff ? "Your staff account" : "Guild application"),
       node(
         "p",
-        "This account was created locally without a guild application. Use the admin panel to manage recruitment.",
+        staff
+          ? "This account was created locally without a guild application. Use the admin panel to manage recruitment."
+          : "There is no guild application associated with your account.",
       ),
     );
     root.append(card);

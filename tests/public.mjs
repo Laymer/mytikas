@@ -66,6 +66,23 @@ if(a.includes('pg_dump')){process.stdout.write('fixture-backup');if(process.env.
   assert.equal(run('down','--volumes').status,1);
   assert.equal(run('logs','--details').status,1);
   const persist=()=>writeFileSync(join(root,'fixture.json'),JSON.stringify(fixture));
+  fixture.services.worker=structuredClone(fixture.services.app);
+  fixture.services.app.environment.ADDON_DOWNLOADS_PAUSED='0';
+  fixture.services.app.environment.DISCORD_CLIENT_ID='123';
+  fixture.services.worker.environment.DISCORD_BLACKLIST_CHANNEL_ID='456';
+  fixture.services.worker.environment.ADDON_RELEASE_TOKEN='fixture';
+  fixture.services.app.environment.MEMBERSHIP_DECISIONS_PAUSED='1';
+  fixture.services.worker.environment.MEMBERSHIP_DECISIONS_PAUSED='1';
+  persist();
+  assert.equal(run('doctor').status,0);
+  fixture.services.worker.environment.MEMBERSHIP_DECISIONS_PAUSED='0';
+  persist();
+  assert.match(run('doctor').stderr,/web\/worker environments differ/);
+  fixture.services.worker=fixture.services.app;
+  delete fixture.services.app.environment.ADDON_DOWNLOADS_PAUSED;
+  delete fixture.services.app.environment.DISCORD_CLIENT_ID;
+  delete fixture.services.app.environment.MEMBERSHIP_DECISIONS_PAUSED;
+  persist();
   for(const invalid of ['latest','ghcr.io/laymer/mytikas:main','ghcr.io/mytikas-monster/mytikas:main']) {
     fixture.services.app.image=invalid;persist();writeFileSync(record,'');
     assert.equal(run('up').status,1);assert(!readFileSync(record,'utf8').includes('"rm"'));

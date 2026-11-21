@@ -38,6 +38,7 @@ try {
   const text=Object.entries(c).filter(([k])=>k!=='tunnelToken').map(([k,v])=>`${k}=${v}`).join('\n');assert.deepEqual(configuration(text,c.tunnelToken),c);
   for(const bad of [text+'\nSESSION_SECRET=x',text+'\nCF_API_TOKEN=secret',text.replace('a'.repeat(64),'$(touch /tmp/no)'),text.replace('PUBLIC_UID=1000','PUBLIC_UID=-1')])assert.throws(()=>configuration(bad,c.tunnelToken));
   assert.throws(()=>validateConfiguration({...c,tunnelToken:'bad\ntoken'}));
+  assert.throws(()=>validateConfiguration({...c,ADDON_DOWNLOADS_PAUSED:'false'}));
   for (const owner of ['mytikas-monster', 'laymer']) {
     const image=`ghcr.io/${owner}/mytikas@sha256:${'a'.repeat(64)}`;
     assert.equal(validateConfiguration({...c,MYTIKAS_IMAGE:image}).MYTIKAS_IMAGE,image);
@@ -60,7 +61,13 @@ try {
   const worker=a.calls.findIndex(v=>v.includes('up')&&v.includes('worker')),tunnel=a.calls.findIndex(v=>v.includes('up')&&v.includes('tunnel'));
   assert(worker>0&&tunnel>worker);await a.import(zip);assert.equal(a.restoreCount,1);
   a.save({phase:'handed-off',highest:2});await assert.rejects(()=>a.import(zip),/Stale/);
+  Object.assign(c,{MEMBERSHIP_DECISIONS_PAUSED:'1',ADDON_DOWNLOADS_PAUSED:'0'});
   const next=archive('4',3);await a.import(next);assert.equal(a.state.phase,'active');assert.equal(a.state.highest,3);
+  const restored=JSON.parse(fs.readFileSync(a.state.active.compose)).services;
+  assert.equal(restored.app.environment.ADDON_DOWNLOADS_PAUSED,'0');
+  assert.equal(restored.app.environment.MEMBERSHIP_DECISIONS_PAUSED,'1');
+  assert.equal(restored.worker.environment.MEMBERSHIP_DECISIONS_PAUSED,'1');
+  assert.equal(restored.worker.environment.ADDON_DOWNLOADS_PAUSED,undefined);
   const b=new Fake(join(root,'b'));b.failWorker=true;await assert.rejects(()=>b.import(zip),/worker failure/);assert.equal(b.state.phase,'import-writers');assert.equal(b.state.transfer.writers,true);
   await assert.rejects(()=>b.recover('previous'),/forbidden/);b.failWorker=false;b.space=()=>{throw new Error('No room for another extraction');};await b.import(zip);assert.equal(b.restoreCount,1);assert.equal(b.state.phase,'active');
   const d=new Fake(join(root,'d'));d.fingerprint=()=> '0'.repeat(64);await assert.rejects(()=>d.import(zip),/fingerprint/);assert.equal(d.state.transfer.writers,false);assert(!d.calls.some(v=>v.includes('up')&&v.includes('worker')));

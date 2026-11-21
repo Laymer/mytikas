@@ -39,15 +39,15 @@ export async function memberCards(root, me, render) {
   };
   if (Object.hasOwn(notices, result))
     message(notices[result], result === "linked");
-  if (me.canDownloadAddon) {
-    const releases = await api("/api/addon");
+  if (me.canDownloadAddon || me.user.role === "ADMIN") {
+    const releases = me.canDownloadAddon ? await api("/api/addon") : [];
     const card = node("section", undefined, "card");
     card.append(
       node("h2", "Mytikas Addon"),
       link(
         releases.length
           ? "Current release · " + releases[0].version
-          : "View releases",
+          : me.user.role === "ADMIN" ? "Manage releases" : "View releases",
         "/addon.html",
       ),
     );
