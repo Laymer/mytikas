@@ -81,6 +81,7 @@ try {
     .getByRole("button", { name: "Create account & apply" })
     .click();
   await expect(applicant).toHaveURL(/email.html/);
+  await expect(applicant.getByRole("button", {name: "Resend verification"})).toBeVisible();
   await activateBrowser(applicant,h.pool,h.cfg.origin,"browser@example.test",()=>checkpoint(applicant));
   await expect(applicant.locator(".tag")).toHaveText("SUBMITTED");
   await expect(
@@ -189,6 +190,7 @@ try {
   await expect(staff.locator("#message")).toHaveText("Account role updated.");
   await checkpoint(applicant);
   await applicant.reload();
+  await expect(applicant.getByText("Current guild rules", {exact: true})).toBeVisible();
   await checkpoint(applicant);
   await applicant.getByRole("link", { name: "Admin panel" }).click();
   await expect(
@@ -262,11 +264,13 @@ try {
   await expect(mobile.getByLabel("Why do you want to join?")).toHaveValue("Keep this application when the response is lost.");
   assert.equal((await h.pool.query("SELECT count(*) FROM users WHERE email='lost-response@example.test'")).rows[0].count, "1");
   await activateBrowser(mobile,h.pool,h.cfg.origin,"lost-response@example.test",()=>checkpoint(mobile));
+  await expect(mobile.getByText("Current guild rules", {exact: true})).toBeVisible();
   await mobile.getByRole("button",{name:"Sign out"}).click();
   await mobile.locator("#login-email").fill("lost-response@example.test");
   await mobile.locator("#login-password").fill(PASS);
   await mobile.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(mobile.locator(".tag")).toHaveText("SUBMITTED");
+  await expect(mobile.getByText("Current guild rules", {exact: true})).toBeVisible();
   // Authenticated applicants cannot follow staff review destinations.
   await checkpoint(mobile);
   await mobile.goto(`${h.cfg.origin}/admin.html#${application.id}`);
