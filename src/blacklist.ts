@@ -222,8 +222,7 @@ async function deliverWarning(c: PoolClient, guild: string, channel: string, ori
   ).rows[0];
   if (!job) return;
   const path = channelPath + "/messages",
-    marker = "Guild presence #" + job.id,
-    guild = process.env.DISCORD_GUILD_ID!;
+    marker = "Guild presence #" + job.id;
   if (job.after_id === null) {
     const latest = orderedMessages(await discordJson(path + "?limit=1"), guild, channel, "0", 1);
     await c.query(
