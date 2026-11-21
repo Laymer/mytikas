@@ -9,6 +9,7 @@ export async function memberBrowser(
   checkpoint: () => Promise<void>,
 ) {
   const url = h.cfg.origin;
+  const staffAccount = page.getByRole("heading", {name: "Your staff account"});
   await checkpoint();
   await page.goto(url + "/addon.html");
   await expect(
@@ -72,6 +73,7 @@ export async function memberBrowser(
       page.getByRole("heading", { name: "Member Home" }),
     ).toBeVisible();
     await expect(page.getByText("Current release · 1.0.1")).toBeVisible();
+    await expect(staffAccount).toBeVisible();
   }
   await page.route("**/api/discord", (route) =>
     route.fulfill({
@@ -86,7 +88,7 @@ export async function memberBrowser(
   );
   await checkpoint();
   await page.reload();
-  await page.getByRole("button", { name: "Unlink Discord" }).click();
+  await expect(staffAccount).toBeVisible();
   await page.unroute("**/api/discord");
   await page.route("**/api/discord", (route) =>
     route.fulfill({
@@ -98,8 +100,10 @@ export async function memberBrowser(
       json: { url: url + "/account.html?discord=cancelled#linked" },
     }),
   );
+  await page.getByRole("button", {name: "Unlink Discord"}).click();
+  await expect(page.getByRole("button", {name: "Link Discord account"})).toBeVisible();
+  await expect(staffAccount).toBeVisible();
   await checkpoint();
-  await page.reload();
   await page.getByRole("button", { name: "Link Discord account" }).click();
   await expect(page).toHaveURL(/#linked$/);
   await checkpoint();
@@ -119,6 +123,7 @@ export async function memberBrowser(
   await page.setViewportSize({ width: 390, height: 844 });
   await checkpoint();
   await page.goto(url + "/account.html");
+  await expect(staffAccount).toBeVisible();
 }
 
 async function applicantRevocation(adminPage: Page, h: Awaited<ReturnType<typeof harness>>) {
@@ -136,6 +141,7 @@ async function applicantRevocation(adminPage: Page, h: Awaited<ReturnType<typeof
     const addonCard = applicant.getByRole("heading", { name: "Mytikas Addon", exact: true });
     await expect(addonTab).toBeVisible();
     await expect(addonCard).toBeVisible();
+    await expect(applicant.getByText("Current guild rules", {exact: true})).toBeVisible();
     await expect(nav.getByRole("link", { name: "Blacklist", exact: true })).toHaveCount(0);
     await addonTab.click();
     const downloadLink = applicant.getByRole("link", {name: "Download OlympusMytikas-1.0.1.zip"});
@@ -159,6 +165,7 @@ async function applicantRevocation(adminPage: Page, h: Awaited<ReturnType<typeof
     await expect(downloadLink).toHaveCount(0);
     await applicant.getByRole("link", { name: "Member Home", exact: true }).click();
     await expect(applicant.getByText("BLACKLISTED", {exact: true})).toBeVisible();
+    await expect(applicant.getByText("Current guild rules", {exact: true})).toBeVisible();
     await expect(addonTab).toHaveCount(0);
     await expect(addonCard).toHaveCount(0);
     await expect(applicant.getByText(reason, {exact: true})).toHaveCount(0);

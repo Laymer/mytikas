@@ -49,6 +49,7 @@ try {
     page.getByRole("link", { name: "Raid Roster", exact: true }),
   ).toBeVisible();
   await checkpoint();
+  await expect(page.getByRole("heading", {name: "Your staff account"})).toBeVisible();
   await memberBrowser(page,h,checkpoint);
   await page.getByRole("link", { name: "Admin panel" }).click();
   await page.getByText("Edit Raid Rosters", { exact: true }).click();
@@ -103,6 +104,7 @@ try {
   );
   await checkpoint();
   await page.goto(h.cfg.origin + "/account.html");
+  await expect(page.getByRole("heading", {name: "Your staff account"})).toBeVisible();
   await page.getByRole("button", { name: "Sign out" }).click();
   await h.pool.query(
     "UPDATE email_limits SET last_at=now()-interval '61 seconds'",
@@ -154,8 +156,10 @@ try {
   await expect(
     page.getByRole("link", { name: "Raid Roster", exact: true }),
   ).toBeVisible();
+  await expect(page.getByText("Current guild rules", {exact: true})).toBeVisible();
   await checkpoint();
   await page.getByRole("link", { name: "Raid Roster", exact: true }).click();
+  await expect(page.locator(".roster-cell")).toHaveCount(70);
   await expect(page.locator("button.roster-cell")).toHaveCount(0);
   // Removal revokes read-only access on the next page request.
   await admin.request(`/api/admin/applications/${id}/remove`, {
@@ -168,7 +172,9 @@ try {
   );
   await checkpoint();
   await page.goto(h.cfg.origin + "/account.html");
+  await expect(page.getByText("Current guild rules", {exact: true})).toBeVisible();
   await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page.locator("#login")).toBeVisible();
   await checkpoint();
   await page.goto(h.cfg.origin + "/roster.html");
   await expect(page.locator("#message")).toContainText("Sign in");
