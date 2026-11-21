@@ -1,27 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import Zip from "adm-zip";
+import type Zip from "adm-zip";
+import { packageZip, prefix, scripts } from "./addon-fixture.js";
 import { syncReleases, validateArchive } from "../src/addon.js";
 import { Client, PASS, harness, mailToken } from "./harness.js";
 
-const scripts = [
-  "Bootstrap.lua",
-  "OlympusRecruit.lua",
-  "KillOnSight.lua",
-  "OlympusMytikas.lua",
-];
-const prefix = "OlympusMytikas/";
-function packageZip(version: string, configure?: (zip: Zip) => void) {
-  const zip = new Zip();
-  zip.addFile(
-    prefix + "OlympusMytikas.toc",
-    Buffer.from(["## Version: " + version, ...scripts].join("\r\n")),
-  );
-  for (const script of scripts)
-    zip.addFile(prefix + script, Buffer.from("-- Synthetic test fixture"));
-  configure?.(zip);
-  return zip.toBuffer();
-}
 const sha = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 const digest = (bytes: Buffer) => "sha256:" + sha(bytes);
 const version = "1.10.0";
