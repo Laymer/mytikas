@@ -13,9 +13,10 @@ export function message(text, success = false) {
   m.className = success ? "success" : "";
   if (text) m.focus();
 }
-export async function api(path, body) {
+export async function api(path, body, headers = {}) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
+  const isFile = body instanceof Blob;
+  const timer = setTimeout(() => controller.abort(), isFile ? 120000 : 15000);
   let res, data;
   try {
     res = await fetch(path, {
@@ -23,9 +24,10 @@ export async function api(path, body) {
       credentials: "same-origin",
       signal: controller.signal,
       headers: body === undefined ? {} : {
-        "Content-Type": "application/json", "X-CSRF-Token": csrfToken || "",
+        "Content-Type": isFile ? "application/zip" : "application/json",
+        ...headers, "X-CSRF-Token": csrfToken || "",
       },
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: isFile ? body : JSON.stringify(body),
     });
     data = await res.json();
   } catch {
@@ -65,7 +67,7 @@ export function bindForm(form, handler) {
       uncertain = Boolean(error.uncertain);
       message(error.message);
       if (uncertain) {
-        const reload = node("a", "Reload current account state");
+        const reload = node("a", "Reload current state");
         reload.href = location.href;
         form.append(reload);
       }
@@ -147,8 +149,13 @@ const descriptions = {
     "Staff have reopened your application. Revise it below and accept the current rules to resubmit.",
   JOINED: "Welcome to Olympus Mytikas. Your membership is confirmed.",
 };
-export function membershipPauseNotice() {
-  const notice = node("p", "Membership decisions, guild membership checks and addon downloads are temporarily paused. You can still apply or revise a reopened application.", "card");
+export function pauseNotice({membershipDecisionsPaused, addonDownloadsPaused}) {
+  const sentences = [];
+  if (membershipDecisionsPaused)
+    sentences.push("Membership decisions and guild membership checks are temporarily paused. You can still apply or revise a reopened application.");
+  if (addonDownloadsPaused)
+    sentences.push("Addon downloads are temporarily paused.");
+  const notice = node("p", sentences.join(" "), "card");
   notice.setAttribute("role", "status");
   return notice;
 }

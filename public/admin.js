@@ -9,7 +9,7 @@ import {
   action,
   rulesView,
   applicationView,
-  membershipPauseNotice,
+  pauseNotice,
   reviewDestination,
 } from "./common.js";
 let user, membershipDecisionsPaused,
@@ -33,7 +33,7 @@ async function render() {
     root.append(a);
     return;
   }
-  if (membershipDecisionsPaused) root.append(membershipPauseNotice());
+  if (membershipDecisionsPaused || me.addonDownloadsPaused) root.append(pauseNotice(me));
   const bar = node("div", undefined, "toolbar");
   bar.append(
     node("span", `${user.email} · ${user.role}`, "meta"),
