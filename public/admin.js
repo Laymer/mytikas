@@ -46,7 +46,7 @@ async function render() {
     detail = node("div");
   detail.id = "detail";
   queue.innerHTML =
-    '<h2>Applications</h2><label for="status-filter">Show applications</label><select id="status-filter"><option value="PENDING">Pending queue</option><option value="ALL">All applications</option><option>SUBMITTED</option><option>APPROVED</option><option>REJECTED</option><option>REOPENED</option><option>JOINED</option><option>REMOVED</option></select><p id="notifications" class="meta"></p><div id="queue"></div><div id="paging" class="toolbar"></div>';
+    '<h2>Applications</h2><label for="status-filter">Show applications</label><select id="status-filter"><option value="PENDING">Pending queue</option><option value="ALL">All applications</option><option>SUBMITTED</option><option>APPROVED</option><option>REJECTED</option><option>REOPENED</option><option>JOINED</option><option>BLACKLISTED</option><option>REMOVED</option></select><p id="notifications" class="meta"></p><div id="queue"></div><div id="paging" class="toolbar"></div>';
   columns.append(queue, detail);
   root.append(columns);
   $("#status-filter").value = filter;

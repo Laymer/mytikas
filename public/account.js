@@ -1,3 +1,4 @@
+import { memberCards } from "./member.js";
 import { rosterNavigation } from "./roster.js";
 import {
   $,
@@ -52,6 +53,7 @@ async function render() {
   }
   root.replaceChildren();
   if (!user) {
+    document.querySelector("h1").textContent="Answer the summit.";
     const rules = await api("/api/rules"),
       cols = node("div", undefined, "columns"),
       login = node("section", undefined, "card"),
@@ -99,6 +101,8 @@ async function render() {
     }),
   );
   root.append(bar);
+  document.querySelector("h1").textContent="Member Home";
+  await memberCards(root,me,render).catch(error => message(error.message));
   const data = await api("/api/application");
   if (!data.application) {
     const card = node("section", undefined, "card");

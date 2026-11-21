@@ -19,7 +19,7 @@ const envFile=join(directory,'environment');
 const dbFile=join(directory,'database.yaml');
 const override=join(directory,'cloud-network.yaml');
 const env={...process.env};
-for(const key of Object.keys(env))if(/^(EMAIL_|SMTP_|DATABASE_|MIGRATION_|SESSION_|APP_ORIGIN$|PUBLIC_|DISCORD_|MYTIKAS_|DEPLOYMENT_|INGRESS_|COMPOSE_|POSTGRES_|DB_ADMIN_)/.test(key))delete env[key];
+for(const key of Object.keys(env))if(/^(EMAIL_|SMTP_|DATABASE_|MIGRATION_|SESSION_|APP_ORIGIN$|PUBLIC_|DISCORD_|ADDON_|MYTIKAS_|DEPLOYMENT_|INGRESS_|COMPOSE_|POSTGRES_|DB_ADMIN_)/.test(key))delete env[key];
 const dbArgs=['compose','-p',dbProject,'--env-file',envFile,'-f',dbFile];
 const appArgs=['compose','-p',appProject,'--env-file',envFile,'-f',resolve('compose.cloud.yaml'),'-f',override];
 let dbStarted=false, appStarted=false;
@@ -134,7 +134,7 @@ volumes:
  function deploy(image){
   environment(image);appStarted=true;
   app(['--profile','migration','run','--rm','migrate'],{label:'Image migration against external TLS database'});
-  const compatibleGrants=image===oldImage ? grantSql.replace(', email_tokens, email_jobs, email_limits, class_jobs','').replace(/GRANT SELECT, UPDATE ON rosters, roster_slots[^;]+;/,'') : grantSql;
+  const compatibleGrants=image===oldImage ? grantSql.split('-- Migration 005')[0].replace(', email_tokens, email_jobs, email_limits, class_jobs','').replace(/GRANT SELECT, UPDATE ON rosters, roster_slots[^;]+;/,'') : grantSql;
   psql(compatibleGrants);
   app(['up','-d','--force-recreate','--wait','--wait-timeout','120','app','worker'],{label:'Cloud web/worker deployment'});
   app(['exec','-T','worker','node','dist/worker-health.js'],{label:'Cloud worker heartbeat'});

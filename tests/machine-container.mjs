@@ -37,7 +37,7 @@ async function initial(machine,name,password=c.POSTGRES_PASSWORD,legacy=false) {
   const id=machine.id(d,'db');machine.docker(['exec',id,'mkdir','/scripts']);
   for(const n of ['runtime-grants.sql','public-runtime-role.sql'])machine.docker(['cp',join(repo,'scripts',n),`${id}:/scripts/${n}`]);
   if(legacy) {
-    const grants=fs.readFileSync(join(repo,'scripts/runtime-grants.sql'),'utf8').replace(', email_tokens, email_jobs, email_limits, class_jobs','').replace(/GRANT SELECT, UPDATE ON rosters, roster_slots[^;]+;/,'');
+    const grants=fs.readFileSync(join(repo,'scripts/runtime-grants.sql'),'utf8').split('-- Migration 005')[0].replace(', email_tokens, email_jobs, email_limits, class_jobs','').replace(/GRANT SELECT, UPDATE ON rosters, roster_slots[^;]+;/,'');
     const file=join(machine.home,'pre004-grants.sql');fs.writeFileSync(file,grants);
     machine.docker(['cp',file,`${id}:/scripts/runtime-grants.sql`]);
   }

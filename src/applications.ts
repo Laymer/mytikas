@@ -1,3 +1,4 @@
+import { profileUrl } from "./armory.js";
 import type { PoolClient } from "pg";
 import { transaction, type Pool } from "./db.js";
 import { HttpError, applicationInput } from "./validation.js";
@@ -44,7 +45,7 @@ export async function acceptSubmission(
     "INSERT INTO events(application_id, actor_id, from_status, to_status, method) VALUES ($1,$2,$3,$4,'APPLICANT')",
     [app.id, actor, app.revision === 1 ? null : "REOPENED", app.status],
   );
-  if (app.status !== "PENDING_EMAIL")
+  if (app.status !== "PENDING_EMAIL" && app.status !== "BLACKLISTED")
     await c.query(
       "INSERT INTO discord_jobs(submission_id,status) VALUES ($1,$2)",
       [submission.id, notifications ? "PENDING" : "DISABLED"],
@@ -66,6 +67,7 @@ export async function detail(pool: Pool, id: string, staff = false) {
       [id],
     ),
   ]);
+  app.armory_url=profileUrl(app.character_name);
   delete app.check_token;
   delete app.check_started_at;
   const result: any = {
@@ -139,14 +141,7 @@ export async function transition(
         "This action is no longer available. Refresh the application.",
       );
     if (action === "remove") {
-      await c.query(
-        "UPDATE rosters SET revision=revision+1 WHERE size IN (SELECT roster_size FROM roster_slots WHERE application_id=$1)",
-        [id],
-      );
-      await c.query(
-        "UPDATE roster_slots SET application_id=NULL WHERE application_id=$1",
-        [id],
-      );
+      await clearRosterSlots(c,id);
     }
     await c.query(
       `UPDATE applications SET status=$2, updated_at=now(), next_check_at=CASE WHEN $2='APPROVED' THEN now() ELSE NULL END,
@@ -166,4 +161,15 @@ export async function transition(
       ],
     );
   });
+}
+
+export async function clearRosterSlots(c: PoolClient,id: string) {
+      await c.query(
+        "UPDATE rosters SET revision=revision+1 WHERE size IN (SELECT roster_size FROM roster_slots WHERE application_id=$1)",
+        [id],
+      );
+      await c.query(
+        "UPDATE roster_slots SET application_id=NULL WHERE application_id=$1",
+        [id],
+      );
 }

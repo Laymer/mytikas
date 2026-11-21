@@ -136,6 +136,7 @@ export function submissionBody(data, rules) {
   };
 }
 const descriptions = {
+  BLACKLISTED: "This character is blocked from guild membership.",
   SUBMITTED:
     "Your application is with the guild staff. You can view it here while it is reviewed.",
   APPROVED:
@@ -155,6 +156,9 @@ export function applicationView(data) {
     node("p", descriptions[a.status]),
     node("p", `Application ${a.id}`, "meta"),
   );
+  const armory=node("a","Open character in the armory");
+  armory.href=a.armory_url;
+  box.append(armory);
   if (a.joined_via)
     box.append(
       node(

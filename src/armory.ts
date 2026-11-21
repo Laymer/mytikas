@@ -48,6 +48,7 @@ export function membershipResult(character: any, name: string): string {
     return "CHARACTER_MISMATCH";
   if (normalize(character.region) !== "us") return "REGION_MISMATCH";
   if (normalize(character.ruleset.slug) !== "pvp") return "RULESET_MISMATCH";
+  if (character.guild !== null && (typeof character.guild?.name !== "string" || !character.guild.name.trim())) return "MALFORMED_PROFILE";
   if (
     typeof character.guild?.name !== "string" ||
     normalize(character.guild.name) !== "olympus mytikas"

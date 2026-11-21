@@ -29,6 +29,13 @@ INSERT INTO email_tokens(id,user_id,purpose,digest,expires_at)
  ('10000000-0000-0000-0000-000000000007','${recoveryUser}','RESET',repeat('2',64),'2100-01-01');
 INSERT INTO email_jobs(user_id,token_id,payload,expires_at,available_at,attempts)
  VALUES ('${recoveryUser}','10000000-0000-0000-0000-000000000006','${payload}','2100-01-01','2100-01-01',2);
+INSERT INTO blacklist_reports(message_id,guild_id,channel_id,reporter_id,reported_at,character_name,character_key,reason)
+ VALUES('501','502','503','504',now(),'Fixture Character','fixture character','Recovery fixture');
+INSERT INTO blacklist_checkpoint VALUES('503','501');
+INSERT INTO blacklist_checks(character_key,scan_day,result,present) VALUES('fixture character',current_date,'MATCH',true);
+INSERT INTO blacklist_warnings(character_key,character_name,after_id) VALUES('fixture character','Fixture Character','501');
+INSERT INTO addon_releases VALUES('0.0.1',now(),'Recovery fixture',repeat('0',64),decode('00ff','hex'));
+INSERT INTO discord_links VALUES('${recoveryUser}','505','Recovery fixture');
 INSERT INTO email_limits(key,attempts,reset_at) VALUES (repeat('3',64),3,'2100-01-01');
 INSERT INTO sessions(sid,sess,expire) VALUES ('recovery-version-seven','{"userId":"${recoveryUser}","authVersion":7,"cookie":{"secure":true}}','2100-01-01');
 `;
