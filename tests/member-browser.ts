@@ -84,6 +84,14 @@ export async function memberBrowser(
   await expect(page.getByText(/Voided by/)).toBeVisible();
   await expect(page.getByText(/Warning #.*Withdrawn/)).toBeVisible();
   await expect(page.getByText(/Warning #.*Delivered/)).toBeVisible();
+  // A reconciliation scan can later confirm Discord accepted the withdrawn job.
+  await h.pool.query(
+    "UPDATE blacklist_warnings SET delivered_id='7655' WHERE character_key='absent character' AND withdrawn_at IS NOT NULL",
+  );
+  await checkpoint();
+  await page.reload();
+  await expect(page.getByText(/Warning #.*Delivered/)).toHaveCount(2);
+  await expect(page.getByText(/Warning #.*Withdrawn/)).toHaveCount(0);
   await page.getByLabel("Character name").fill("No such fixture");
   await checkpoint();
   await page.getByRole("button", {name:"Search"}).click();

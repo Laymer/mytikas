@@ -43,7 +43,8 @@ try {
   const directory = await mkdtemp(join(tmpdir(), "mytikas-worker-test-"));
   const env = { ...process.env, DATABASE_URL: h.cfg.databaseUrl, SESSION_SECRET: h.cfg.sessionSecret,
     APP_ORIGIN: h.cfg.origin, DEPLOYMENT_PROFILE: "local", INGRESS_MODE: "none", MYTIKAS_DEMO: "0",
-    DISCORD_WEBHOOK_URL: "", WORKER_ID_FILE: join(directory, "id") };
+    DISCORD_WEBHOOK_URL: "", DISCORD_GUILD_ID: "123", DISCORD_BOT_TOKEN: "", DISCORD_BLACKLIST_CHANNEL_ID: "",
+    ADDON_RELEASE_TOKEN: "", WORKER_ID_FILE: join(directory, "id") };
   // Exercise the missing identity-file failure deterministically, rather than
   // depending on whether health polling wins the worker startup race.
   const missingHealth = spawn(process.execPath, ["--import", "tsx", "src/worker-health.ts"], { env, stdio: "ignore" });
@@ -58,6 +59,16 @@ try {
       if (!healthy) await sleep(100);
     }
     assert.ok(healthy, "Running worker has a process-specific heartbeat");
+    const admin = new Client(h.cfg.origin);
+    await admin.login();
+    let bot = (await admin.request("/api/blacklist")).data.bot;
+    for (let i = 0; i < 30 && bot.state === "worker-unavailable"; i++) {
+      await sleep(100);
+      bot = (await admin.request("/api/blacklist")).data.bot;
+    }
+    assert.deepEqual(bot, {
+      state: "missing-configuration", missing: ["bot token", "blacklist channel ID"], lastSyncAt: null,
+    }, "Admin sees the separately running worker’s active configuration");
     workerProcess.kill("SIGTERM");
     const result = await Promise.race([exited, sleep(5000).then(() => { throw new Error("Worker failed to drain"); })]);
     assert.equal(result[0], 0);
