@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { reportsTick, scanTick, warningTick } from "../src/blacklist.js";
+import { importReport, reportsTick, scanTick, warningTick } from "../src/blacklist.js";
+import { transaction } from "../src/db.js";
 import { Client, harness, mailToken, PASS } from "./harness.js";
 
 const h = await harness();
@@ -31,6 +32,9 @@ history[100]!.content =
   "Name: Reported\nSurname: Character\nReason: Private revision fixture.";
 const pagesRead: string[] = [];
 let simulateLostResponse = false;
+let warningPage: unknown[] | undefined;
+let incorrectReceipt = false;
+let waitForCorrection: (() => Promise<void>) | undefined;
 const sent: Array<ReturnType<typeof message>> = [];
 const realFetch = globalThis.fetch;
 const env = {
@@ -61,15 +65,17 @@ globalThis.fetch = async (input, init) => {
     assert.equal(payload.enforce_nonce, true);
     assert.deepEqual(payload.allowed_mentions, { parse: [] });
     // The message is accepted amid a burst of channel traffic. The worker loses its receipt.
+    const previous = 102 + sent.length * 102;
     for (let i = 1; i <= 101; i++) {
       history.push(
-        message(102 + i, i === 1 ? payload.content : "Guild discussion"),
+        message(previous + i, i === 1 ? payload.content : "Guild discussion"),
       );
     }
-    const accepted = message(204, payload.content, bot);
+    const accepted = message(previous + 102, payload.content, bot);
     sent.push(accepted);
     history.push(accepted);
     if (simulateLostResponse) throw new Error("Lost delivery response");
+    if (incorrectReceipt) return Response.json({ ...accepted, author: { id: reporter } });
     return Response.json(accepted);
   }
   const after = u.searchParams.get("after");
@@ -79,6 +85,8 @@ globalThis.fetch = async (input, init) => {
   }
   pagesRead.push(after);
   assert.equal(u.searchParams.get("limit"), "100");
+  if (warningPage) return Response.json(warningPage);
+  await waitForCorrection?.();
   const page = history
     .filter((m) => BigInt(m.id) > BigInt(after))
     .slice(0, 100);
@@ -261,23 +269,83 @@ try {
       .delivered_id,
     null,
   );
+  // A correction after a lost receipt must still reconcile the delivery without retrying it.
+  assert.equal((await admin.request(`/api/blacklist/${id(1)}/void`, { reason: "Mistaken report" })).status, 200);
+  const reportSilver = (offset: number) => transaction(h.pool, c => importReport(c,
+    message(offset, "Name: Silver\nSurname: Ridge\nReason: Fresh officer report"), guild, channel));
+  await reportSilver(205);
   await h.restart();
   pagesRead.length = 0;
   simulateLostResponse = false;
+  for (const malformed of [
+    [{ ...message(103, "Text"), channel_id: "123" }],
+    [message(102, "Nonadvancing cursor")],
+    [{ ...message(103, "Text"), author: {} }],
+  ]) {
+    warningPage = malformed;
+    await assert.rejects(warningTick(h.pool, h.cfg.origin), /Discord/);
+    assert.equal((await h.pool.query("SELECT after_id FROM blacklist_warnings")).rows[0].after_id, id(102));
+  }
+  warningPage = undefined;
+  pagesRead.length = 0;
+  await warningTick(h.pool, h.cfg.origin);
+  assert.deepEqual(pagesRead, [id(102)]);
+  assert.equal((await h.pool.query("SELECT after_id FROM blacklist_warnings")).rows[0].after_id, id(202));
+  await h.restart();
   await Promise.all([
     warningTick(h.pool, h.cfg.origin),
     warningTick(h.pool, h.cfg.origin),
   ]);
   assert.deepEqual(pagesRead, [id(102), id(202)]);
   assert.deepEqual(
-    (await h.pool.query("SELECT delivered_id FROM blacklist_warnings")).rows,
-    [{ delivered_id: id(204) }],
+    (await h.pool.query("SELECT delivered_id,withdrawn_at IS NOT NULL AS withdrawn FROM blacklist_warnings")).rows,
+    [{ delivered_id: id(204), withdrawn: true }],
   );
   assert.equal(sent.length, 1);
   assert.ok(sent[0]!.content.includes("Silver Ｒidge"));
   assert.equal(sent[0]!.content.includes(original.reason), false);
+  async function scanSilver(result: string) {
+    await h.pool.query("UPDATE blacklist_checks SET scan_day=current_date-2 WHERE character_key='silver ridge'");
+    await scanTick(h.pool, async name => name.startsWith("Silver") ? result : "PROFILE_NOT_FOUND");
+  }
+  await scanSilver("MATCH");
+  assert.equal((await h.pool.query("SELECT 1 FROM blacklist_warnings")).rowCount, 1);
+  await scanSilver("GUILD_MISMATCH");
+  await scanSilver("MATCH");
+  await warningTick(h.pool, h.cfg.origin); // Watermark a new episode before the last report is corrected.
+  await reportSilver(206);
+  assert.equal((await admin.request(`/api/blacklist/${id(206)}/void`, { reason: "Duplicate report" })).status, 200);
+  assert.equal((await h.pool.query("SELECT withdrawn_at FROM blacklist_warnings ORDER BY id DESC LIMIT 1")).rows[0].withdrawn_at, null);
+  let start!: () => void, finish!: () => void;
+  const historyRequested = new Promise<void>(resolve => { start = resolve; });
+  const historyReady = new Promise<void>(resolve => { finish = resolve; });
+  waitForCorrection = () => { start(); return historyReady; };
+  const inFlightWarning = warningTick(h.pool, h.cfg.origin);
+  await historyRequested;
+  try {
+    assert.equal((await admin.request(`/api/blacklist/${id(205)}/void`, { reason: "Correction" })).status, 200);
+    await reportSilver(207);
+  } finally {
+    waitForCorrection = undefined;
+    finish();
+    await inFlightWarning;
+  }
+  assert.equal(sent.length, 1);
+  assert.deepEqual((await h.pool.query("SELECT after_id,delivered_id,withdrawn_at IS NOT NULL AS withdrawn FROM blacklist_warnings ORDER BY id DESC LIMIT 1")).rows,
+    [{ after_id: null, delivered_id: null, withdrawn: true }]);
+  await scanSilver("UNAVAILABLE");
+  assert.equal((await h.pool.query("SELECT 1 FROM blacklist_warnings")).rowCount, 2);
+  await scanSilver("MATCH");
+  await warningTick(h.pool, h.cfg.origin); // Only fresh evidence can schedule a replacement.
+  incorrectReceipt = true;
+  await assert.rejects(warningTick(h.pool, h.cfg.origin), /Invalid Discord warning receipt/);
+  incorrectReceipt = false;
+  await warningTick(h.pool, h.cfg.origin);
+  await warningTick(h.pool, h.cfg.origin);
+  assert.equal(sent.length, 2);
+  assert.equal((await h.pool.query("SELECT delivered_id FROM blacklist_warnings WHERE withdrawn_at IS NULL")).rows[0].delivered_id, id(306));
   console.log(
-    "Moderation history rollback, restart, blocked revision, scan correction and paginated warning recovery passed.",
+    "Moderation history rollback, restart, blocked revision, corrections, warning withdrawal and paginated delivery recovery passed.",
   );
 } finally {
   globalThis.fetch = realFetch;

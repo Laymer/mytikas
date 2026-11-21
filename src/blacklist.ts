@@ -96,6 +96,10 @@ export async function voidReport(
     ).rows[0];
     if (!report) throw new HttpError(409, "Report is no longer active.");
     if (await blocked(c, report.character_key)) return;
+    await c.query(
+      "UPDATE blacklist_warnings SET withdrawn_at=now() WHERE character_key=$1 AND delivered_id IS NULL AND withdrawn_at IS NULL",
+      [report.character_key],
+    );
     const a = (
       await c.query(
         `UPDATE applications a SET updated_at=now(),
@@ -115,7 +119,10 @@ export async function historyPage(guild: string, channel: string, after: string)
   const page = await discordJson(
     `/channels/${channel}/messages?limit=100&after=${after}`,
   );
-  if (!Array.isArray(page) || page.length > 100)
+  return orderedMessages(page, guild, channel, after, 100);
+}
+function orderedMessages(page: unknown, guild: string, channel: string, after: string, limit: number) {
+  if (!Array.isArray(page) || page.length > limit)
     throw new Error("Invalid Discord history page");
   const cursor = BigInt(after);
   const ids = new Set<string>();
@@ -182,10 +189,13 @@ export async function scanTick(pool: Pool, verify: Verify = verifyMembership) {
         ON CONFLICT(character_key) DO UPDATE SET scan_day=excluded.scan_day,checked_at=now(),result=excluded.result,present=excluded.present`,
         [row.character_key, row.day, result, present],
       );
-      if (present && !old?.present)
+      // A corrected, undelivered warning can be replaced only after a fresh positive check.
+      if (result === "MATCH")
         await c.query(
-          "INSERT INTO blacklist_warnings(character_key,character_name) VALUES($1,$2)",
-          [row.character_key, row.character_name],
+          `INSERT INTO blacklist_warnings(character_key,character_name) SELECT $1,$2
+          WHERE NOT $3::boolean OR (SELECT withdrawn_at IS NOT NULL AND delivered_id IS NULL AND after_id IS NULL
+            FROM blacklist_warnings WHERE character_key=$1 ORDER BY id DESC LIMIT 1)`,
+          [row.character_key, row.character_name, !!old?.present],
         );
     });
   }
@@ -205,47 +215,61 @@ async function deliverWarning(c: PoolClient, guild: string, channel: string, ori
   const channelPath = "/channels/" + channel;
   const botId = await checkReportChannel(guild, channel, true);
   const job = (
-    await c.query(`SELECT w.* FROM blacklist_warnings w WHERE delivered_id IS NULL AND EXISTS
-    (SELECT 1 FROM blacklist_reports r WHERE r.character_key=w.character_key AND voided_at IS NULL) ORDER BY id LIMIT 1`)
+    await c.query(`SELECT w.* FROM blacklist_warnings w WHERE delivered_id IS NULL AND
+    ((withdrawn_at IS NOT NULL AND after_id IS NOT NULL) OR (withdrawn_at IS NULL AND EXISTS
+    (SELECT 1 FROM blacklist_reports r WHERE r.character_key=w.character_key AND voided_at IS NULL)))
+    ORDER BY id LIMIT 1`)
   ).rows[0];
   if (!job) return;
   const path = channelPath + "/messages",
-    marker = "Guild presence #" + job.id;
+    marker = "Guild presence #" + job.id,
+    guild = process.env.DISCORD_GUILD_ID!;
   if (job.after_id === null) {
-    const latest = await discordJson(path + "?limit=1");
+    const latest = orderedMessages(await discordJson(path + "?limit=1"), guild, channel, "0", 1);
     await c.query(
-      "UPDATE blacklist_warnings SET after_id=$2 WHERE id=$1 AND after_id IS NULL",
+      "UPDATE blacklist_warnings SET after_id=$2 WHERE id=$1 AND after_id IS NULL AND withdrawn_at IS NULL",
       [job.id, latest[0]?.id ?? "0"],
     );
     return;
   }
-  let after = job.after_id,
-    sent;
-  do {
-    const page = await discordJson(path + "?after=" + after + "&limit=100");
-    sent = page.find(
-      (m: any) => m.author.id === botId && m.content.split("\n")[0] === marker,
+  const page = await historyPage(guild, channel, job.after_id);
+  if (page.some(m => typeof m.author?.id !== "string" || typeof m.content !== "string"))
+    throw new Error("Invalid Discord warning history");
+  const matches = (m: any) =>
+    m.author?.id === botId && typeof m.content === "string" && m.content.split("\n")[0] === marker;
+  let sent = page.find(matches);
+  if (!sent && page.length === 100) {
+    // Persist one verified page per transaction so a restart resumes from its last message.
+    await c.query(
+      "UPDATE blacklist_warnings SET after_id=$2 WHERE id=$1",
+      [job.id, page.at(-1).id],
     );
-    if (sent || page.length < 100) break;
-    after = page.reduce(
-      (a: string, m: any) => (BigInt(a) > BigInt(m.id) ? a : m.id),
-      after,
-    );
-  } while (true);
-  sent ??= await discordJson(path, {
-    method: "POST",
-    body: JSON.stringify({
-      content: [
-        marker,
-        job.character_name,
-        profileUrl(job.character_name),
-        origin + "/blacklist.html?q=" + encodeURIComponent(job.character_name),
-      ].join("\n"),
-      nonce: "bl-" + job.id,
-      enforce_nonce: true,
-      allowed_mentions: { parse: [] },
-    }),
-  });
+    return;
+  }
+  if (!sent) {
+    // A correction can finish during history reads. Lock only for the final decision and send.
+    const current = await c.query("SELECT withdrawn_at FROM blacklist_warnings WHERE id=$1 FOR UPDATE", [job.id]);
+    if (current.rows[0].withdrawn_at) {
+      await c.query("UPDATE blacklist_warnings SET after_id=NULL WHERE id=$1", [job.id]);
+      return;
+    }
+    const receipt = await discordJson(path, {
+      method: "POST",
+      body: JSON.stringify({
+        content: [
+          marker,
+          job.character_name,
+          profileUrl(job.character_name),
+          origin + "/blacklist.html?q=" + encodeURIComponent(job.character_name),
+        ].join("\n"),
+        nonce: "bl-" + job.id,
+        enforce_nonce: true,
+        allowed_mentions: { parse: [] },
+      }),
+    });
+    [sent] = orderedMessages([receipt], guild, channel, job.after_id, 1);
+    if (!matches(sent)) throw new Error("Invalid Discord warning receipt");
+  }
   await c.query("UPDATE blacklist_warnings SET delivered_id=$2 WHERE id=$1", [
     job.id,
     sent.id,

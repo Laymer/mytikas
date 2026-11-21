@@ -104,6 +104,7 @@ globalThis.fetch = async (input, init) => {
   if (init?.method === "POST") {
     const msg = {
       id: String(900 + warnings.length),
+      channel_id: channel,
       author: { id: "888" },
       content: JSON.parse(String(init.body)).content,
     };
