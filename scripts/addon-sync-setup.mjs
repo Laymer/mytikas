@@ -33,6 +33,8 @@ function appJWT(appId, key) {
   return payload + '.' + sign('RSA-SHA256', Buffer.from(payload), key).toString('base64url');
 }
 
+export class InstallationPending extends Error {}
+
 async function github(fetchImpl, path, guidance, jwt) {
   const headers = { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
   if (jwt) headers.Authorization = 'Bearer ' + jwt;
@@ -41,7 +43,8 @@ async function github(fetchImpl, path, guidance, jwt) {
   });
   if (!response.ok) {
     await response.body?.cancel();
-    throw new Error(guidance + ' GitHub returned HTTP ' + response.status + '.');
+    const errorType = jwt && response.status === 404 ? InstallationPending : Error;
+    throw new errorType(guidance + ' GitHub returned HTTP ' + response.status + '.');
   }
   return response.json();
 }

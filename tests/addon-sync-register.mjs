@@ -23,9 +23,9 @@ try {
       attempts===2?{...reply,permissions:{...reply.permissions,administration:'write'}}:reply,{status:201});
   },onReady:async origin=>{
     assert.match(origin,/^http:\/\/127\.0\.0\.1:\d+$/);
-    const {headers,...rest}=await fetch(origin);
-    assert.equal(headers.get('Referrer-Policy'),'no-referrer');
-    const text=await (await fetch(origin)).text();
+    const landing=await fetch(origin);
+    assert.equal(landing.headers.get('Referrer-Policy'),'no-referrer');
+    const text=await landing.text();
     assert.match(text,/organizations\/Mytikas-Monster\/settings\/apps\/new/);
     assert.match(text,/&quot;public&quot;:true/);
     const [,state]=text.match(/state=([a-f0-9]{64})/);

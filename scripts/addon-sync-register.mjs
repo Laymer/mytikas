@@ -26,7 +26,7 @@ function links(meta) {
   }));
 }
 
-function notice(meta) {
+export function installationNotice(meta) {
   return links(meta).map(({ owner, url }) => 'Install on ' + owner + '/OlympusMytikas: ' + url).join('\n');
 }
 
@@ -137,7 +137,8 @@ export async function registerApp({dir=join(homedir(),'.mytikas','integrations')
     if (req.method !== 'GET' || req.headers.host !== new URL(origin).host) {
       res.writeHead(403).end('Invalid local request.'); return;
     }
-    const url = new URL(req.url,origin);
+    let url;
+    try {url = new URL(req.url,origin);} catch {res.writeHead(400).end('Invalid request.'); return;}
     if (url.pathname === '/') {
       const manifest = {name, url:homepage, description:'Review website addon submissions and publish their original release ZIP.',
         hook_attributes:{active:false}, redirect_url:origin+'/callback', public:true, default_permissions:permissions, default_events:[]};
@@ -163,7 +164,7 @@ export async function registerApp({dir=join(homedir(),'.mytikas','integrations')
       const meta = persist(await response.json(),dir);
       res.end('<!doctype html><title>Install Mytikas Addon Synchronizer</title><h1>App registered</h1>' +
         '<p>Complete each installation with only the OlympusMytikas repository selected.</p>' +
-        links(meta).map(({owner,url}) => '<p><a href="' + escape(url) + '">Install on ' + owner + '/OlympusMytikas</a></p>').join(''));
+        links(meta).map(({owner,url}) => '<p><a target="_blank" rel="noopener noreferrer" href="' + escape(url) + '">Install on ' + owner + '/OlympusMytikas</a></p>').join(''));
       finish(meta);
     } catch {
       // Errors from HTTP and cryptography libraries can contain callback URLs or private input.
@@ -180,7 +181,7 @@ export async function registerApp({dir=join(homedir(),'.mytikas','integrations')
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  registerApp().then(meta => console.log(notice(meta))).catch(error => {
+  registerApp().then(meta => console.log(installationNotice(meta))).catch(error => {
     console.error(error instanceof SyntaxError ? 'Invalid saved GitHub App metadata.' : error.message);
     process.exitCode=1;
   });

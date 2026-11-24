@@ -2,6 +2,18 @@
 
 The web app accepts submissions after the operator enables the feature. Its PostgreSQL outbox keeps the original ZIP until the Rust worker commits that ZIP and its checksum in a separate PostgreSQL 18 archive database. The worker opens an OlympusMytikas PR from Laymer’s fork and publishes the original bytes after review and merge. Existing downloads remain available during review. Both databases belong to the same public Compose project and have independent named volumes. The worker gets a dedicated SQL login in each database. Only the synchronizer container receives the GitHub App private key.
 
+## Automated rollout on the active host
+
+For the reviewed migration from schema 008 to 009, run the following from a checkout containing the deployment tools as the production machine owner. The command locates the active public Compose project and uses the reviewed app and synchronizer image digests.
+
+```sh
+node scripts/addon-sync.mjs rollout
+```
+
+On first use, rollout opens the organization’s GitHub App registration on macOS or prints a loopback URL on Linux. Complete GitHub’s browser consent and install the App on the selected `OlympusMytikas` repository under **both** Mytikas-Monster and Laymer. Registration stores the private key on this host. For an existing App, supply the local PEM path in `GITHUB_APP_PRIVATE_KEY_FILE` and its numeric `GITHUB_APP_ID`. The rollout discovers the installation IDs and writes the owner-only configuration. The host’s Docker login must be able to pull both images.
+
+Rollout verifies the pinned images, App access, and deployment settings before stopping traffic. It creates a private backup, rehearses restoration, applies the web migration and grants, starts the synchronizer, and enables the admin form. Rerun the same command after an interruption. It resumes the recorded deployment stage. After activation, verify that `https://app.mytikas.monster/api/health` reports ready and that `/api/auth/me` reports `addonSubmissionsEnabled: true`. Use the next approved upload for release verification.
+
 ## Prepare the release
 
 1. Merge the reviewed implementation PRs and confirm the required checks on the resulting upstream commits. Record the app and synchronizer GHCR digests and source commits. Upstream OlympusMytikas already publishes through its CurseForge workflow. Preserve that integration and its existing project configuration. The GitHub App must be installed on both the Laymer fork and the upstream add-on repository. On the fork it writes content and branches. On upstream it reads the fork PR, opens the PR and writes the tag and release.

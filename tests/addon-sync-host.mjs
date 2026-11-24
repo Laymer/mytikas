@@ -17,6 +17,11 @@ const privateKey=join(configDir,'fixture.pem'), journal=join(home,'calls.jsonl')
 const calls=()=>fs.readFileSync(journal,'utf8').trim().split('\n').filter(Boolean).map(line=>JSON.parse(line));
 const optsFile=join(home,'fixture.json');
 const original={services:{db:{environment:{POSTGRES_PASSWORD:'b'.repeat(64)}},app:{image:'old',environment:{DATABASE_URL:'postgres://runtime:'+'c'.repeat(64)+'@db/app',SESSION_SECRET:'d'.repeat(96)}},worker:{image:'old',environment:{}},tunnel:{user:'1000:1000'}}};
+original.services.app.environment.APP_ORIGIN='https://app.mytikas.monster';
+original.services.app.environment.DEPLOYMENT_PROFILE='public';
+original.services.db.volumes=[{type:'volume',source:'data',target:'/var/lib/postgresql'}];
+original.volumes={data:{name:'fixture-data'}};
+const releaseCommit='895dfd8e5f1ff649ee87f524bdb218b37df07315';
 const cfg={image:'ghcr.io/mytikas-monster/mytikas-synchronizer@sha256:'+'2'.repeat(64),GITHUB_APP_ID:'42',GITHUB_FORK_INSTALLATION_ID:'43',GITHUB_UPSTREAM_INSTALLATION_ID:'44',GITHUB_APP_PRIVATE_KEY_FILE:privateKey};
 const opts={};
 function run(args) {
@@ -43,7 +48,7 @@ try {
   // Use a disposable local engine façade. The real CLI resolves its machine pointer,
   // validates credentials, checks actual migration file hashes and persists its overlay.
   fs.writeFileSync(join(home,'bin/docker'),`#!/usr/bin/env python3
-import sys, os, json, shutil
+import sys, os, json, shutil, hashlib
 from pathlib import Path
 a=sys.argv[1:]
 p=Path(os.environ['HOST_FIXTURE'])
@@ -51,22 +56,55 @@ cfg=json.loads((p/'fixture.json').read_text())
 with (p/'calls.jsonl').open('a') as f:
  f.write(json.dumps({'args':a, 'has_owner_url':bool(os.environ.get('DATABASE_URL') or os.environ.get('ARCHIVE_DATABASE_URL')),'has_role_password':bool(os.environ.get('SYNC_PASSWORD'))})+'\\n')
 if a[0]=='--context': a=a[2:]
-if a[:2]==['context','inspect']: print('[{"Endpoints":{"docker":{"Host":"unix:///fixture"}}}]')
+services=['db','app','worker','tunnel','archive-db','synchronizer']
+ids={name:format(i+1,'x')*32 for i,name in enumerate(services)}
+def service_id(s): return ids.get(s,'1'*32)
+if a[0]=='ps' and cfg.get('checkout') and 'label=com.docker.compose.service=db' in a: print(ids['db'] if not cfg.get('no_host') else '')
+elif a[0]=='ps': pass
+elif a[0]=='pull' and cfg.get('pull_denied'): sys.exit(1)
+elif a[0]=='run' and a[-1]=='preflight' and cfg.get('preflight_failure'): sys.exit(1)
+elif a[:2]==['context','inspect']: print('[{"Endpoints":{"docker":{"Host":"unix:///fixture"}}}]')
 elif a[0]=='info': print('{"OSType":"linux","Architecture":"amd64"}')
 elif a[:2]==['volume','ls']:
  if (p/'retained').exists(): print('fixture_addon-archive-data')
 elif a[0]=='create': print('1'*32)
 elif a[0]=='cp' and a[1].endswith(':/app/migrations'):
  shutil.copytree(str(p/'candidate-migrations'),str(Path(a[2])/'migrations'))
-elif a[:2]==['image','inspect']: print(json.dumps([{'Id':a[-1] if cfg.get('wrong_digest') else 'tested'}]))
+elif a[:2]==['image','inspect']: print(json.dumps([{'Id':a[-1] if cfg.get('wrong_digest') else 'sha256:'+'e'*64}]))
+elif a[0]=='inspect' and cfg.get('rollout'):
+ service=next((name for name,id in ids.items() if id==a[1]),'db')
+ running=service=='db' or not (p/'stopped').exists()
+ overlay=p/'deployment'/'.public'/'addon-sync.json'
+ settings=json.loads((p/'.mytikas'/'integrations'/'addon-sync.json').read_text())
+ env=[k+'='+v for k,v in settings.items() if k.startswith('GITHUB_')]
+ if overlay.exists(): env.append('ADDON_SUBMISSIONS_ENABLED='+json.loads(overlay.read_text())['services']['app']['environment']['ADDON_SUBMISSIONS_ENABLED'])
+ labels={'com.docker.compose.project':'mytikas-public' if cfg.get('checkout') else 'fixture',
+  'com.docker.compose.service':service,'com.docker.compose.project.working_dir':str(p/'deployment'),
+  'com.docker.compose.project.config_files':str(p/'deployment'/'compose.public.yaml')}
+ mounts=([{'Type':'volume','Name':cfg.get('volume','fixture-data'),'Destination':'/var/lib/postgresql'}] if service=='db' else
+   [{'Source':settings['GITHUB_APP_PRIVATE_KEY_FILE'],'Destination':'/run/secrets/github.pem','RW':False}])
+ print(json.dumps([{'Image':'sha256:'+'f'*64 if service in ['db','archive-db'] else 'sha256:'+'e'*64,'Mounts':mounts,
+  'Config':{'Labels':labels,'Env':env},'State':{'Running':running,'ExitCode':0,'OOMKilled':False,'Health':{'Status':'healthy'}}}]))
 elif a[0]=='inspect': print('[{"Image":"fixture-db-image","State":{"Running":false,"OOMKilled":false,"ExitCode":0}}]')
 elif a[0]=='compose':
- if '--format' in a and 'config' in a: print((p/'deployment'/'compose.json').read_text())
- if 'ps' in a: print('2'*32)
+ if '--format' in a and 'config' in a:
+  compose=json.loads((p/'deployment'/'compose.json').read_text())
+  if 'MYTIKAS_IMAGE' in os.environ:
+   for name in ['app','worker','migrate']:compose.setdefault('services',{}).setdefault(name,{})['image']=os.environ['MYTIKAS_IMAGE']
+  print(json.dumps(compose))
+ if 'ps' in a: print(service_id(a[-1]))
+ if 'stop' in a and 'app' in a: (p/'stopped').touch()
+ if ('up' in a or 'start' in a) and 'app' in a: (p/'stopped').unlink(missing_ok=True)
+ if 'exec' in a and 'pg_dump' in a:
+  if cfg.get('backup_failure'): sys.exit(1)
+  print('PGDMP-fixture')
+ if 'exec' in a and '/scripts/public-runtime-role.sql' in a and cfg.get('grant_failure'): sys.exit(1)
  if 'exec' in a and 'psql' in a and '-c' in a:
   q=a[-1]
   if 'json_object_agg' in q: print((p/'applied.json').read_text())
   elif 'to_regclass' in q: print(cfg.get('schema','t'))
+  elif 'pg_tables' in q: print('["fixture"]')
+  elif 'pg_sequences' in q: print('[]')
   elif 'count(*)' in q: print(cfg.get('existing','0'))
  if 'up' in a and a[-1]=='archive-db': (p/'retained').touch()
  if a[-1]=='preflight' and cfg.get('preflight_failure'): sys.exit(1)
@@ -124,5 +162,53 @@ elif a[0]=='compose':
   fails(/currently active host/,'enable');
   write(state,{phase:'import-stopping',active:host});
   fails(/current host transfer/,'enable');
+  // Rehearse using the published release and the actual CLI from another checkout.
+  opts.rollout=true;
+  write(state,{phase:'active',context:'local',active:host});
+  write(host.compose,original);
+  write(inputs,cfg);
+  fs.rmSync(join(privatePath,'machine-handoff.json'));
+  fs.rmSync(overlay);
+  fs.mkdirSync(join(machine,'sources',releaseCommit),{recursive:true});
+  fs.writeFileSync(join(machine,'sources',releaseCommit,'.complete'),releaseCommit);
+  opts.volume='other-volume';
+  fails(/different volume/,'rollout');
+  delete opts.volume;
+  opts.pull_denied=true;
+  fails(/Docker registry read access|Cannot pull/,'rollout');
+  delete opts.pull_denied;
+  opts.preflight_failure=true;
+  fails(/App preflight failed/,'rollout');
+  assert(!calls().some(c=>c.args.includes('stop')));
+  delete opts.preflight_failure;
+  opts.backup_failure=true;
+  fails(/failed|backup/i,'rollout');
+  const restored=calls();
+  assert(restored.some(c=>c.args.includes('start') && c.args.at(-1)==='tunnel'));
+  assert(!restored.some(c=>c.args.includes('dist/migrate.js')));
+  delete opts.backup_failure;
+  opts.grant_failure=true;
+  fails(/failed/i,'rollout');
+  const checkpoint=join(privatePath,'addon-rollout.json');
+  const verified=read(checkpoint);
+  assert.equal(verified.phase,'verified');
+  assert(fs.existsSync(join(verified.backup,'manifest.json')));
+  delete opts.grant_failure;
+  ok('rollout');
+  assert(!fs.existsSync(checkpoint));
+  assert(!calls().some(c=>c.args.includes('pg_dump')));
+  assert.equal(read(state).active.commit,releaseCommit);
+  ok('rollout');
+  assert(!calls().some(c=>c.args.includes('stop')||c.args.includes('pg_dump')));
+  // Test discovery from Docker labels on an active ordinary checkout.
+  write(state,{phase:'idle',context:'local'});
+  opts.checkout=true;
+  opts.no_host=true;
+  fails(/active public host/,'rollout');
+  delete opts.no_host;
+  fs.copyFileSync(host.compose,join(deployment,'compose.public.yaml'));
+  fs.rmSync(overlay);fs.rmSync(join(home,'retained'));
+  ok('rollout');
+  assert.match(fs.readFileSync(host.env,'utf8'),/MYTIKAS_IMAGE=ghcr\.io\/mytikas-monster\/mytikas@sha256:0eb302/);
   console.log('Verified managed upgrade, synchronizer credentials, least-privilege wiring, gate ordering and pause/recovery.');
 } finally {fs.rmSync(home,{recursive:true,force:true});}
