@@ -136,6 +136,7 @@ jobs:
           IMAGE_ARCHIVE: /tmp/mytikas-tested.tar
       - run: npm run test:machine:container
       - run: node tests/addon-rollout-backup.mjs
+      - run: node tests/addon-sync-grants.mjs
       - run: npm run test:cloud:rehearsal
         env:
           REHEARSAL_IMAGE: mytikas-tested:latest
