@@ -45,6 +45,7 @@ try {
   write(inputs,cfg);
   const applied=Object.fromEntries(fs.readdirSync('migrations').filter(n=>n.endsWith('.sql')&&!n.startsWith('009_')).map(n=>[n,createHash('sha256').update(fs.readFileSync(join('migrations',n))).digest('hex')]));
   write(join(home,'applied.json'),applied);
+  fs.copyFileSync('scripts/addon-sync-grants.sql',join(home,'expected-grants.sql'));
   // Use a disposable local engine façade. The real CLI resolves its machine pointer,
   // validates credentials, checks actual migration file hashes and persists its overlay.
   fs.writeFileSync(join(home,'bin/docker'),`#!/usr/bin/env python3
@@ -98,10 +99,20 @@ elif a[0]=='compose':
  if 'exec' in a and 'pg_dump' in a:
   if cfg.get('backup_failure'): sys.exit(1)
   print('PGDMP-fixture')
+ if 'exec' in a and 'psql' in a and 'SYNC_PASSWORD' in a:
+  # Read the actual child stdin. An empty stream succeeds in real psql.
+  data=sys.stdin.buffer.read()
+  if data==(p/'expected-grants.sql').read_bytes():
+   (p/('role-'+a[a.index('psql')-1])).write_text(hashlib.sha256(os.environ['SYNC_PASSWORD'].encode()).hexdigest())
  if 'exec' in a and '/scripts/public-runtime-role.sql' in a and cfg.get('grant_failure'): sys.exit(1)
  if 'exec' in a and 'psql' in a and '-c' in a:
   q=a[-1]
-  if 'json_object_agg' in q: print((p/'applied.json').read_text())
+  if 'has_column_privilege' in q:
+   service=a[a.index('psql')-1]
+   role=p/('role-'+service)
+   if not role.exists() or role.read_text()!=hashlib.sha256(os.environ.get('PGPASSWORD','').encode()).hexdigest() or cfg.get('login_failure')==service: sys.exit(2)
+   print('f' if cfg.get('bad_grants')==service else 't')
+  elif 'json_object_agg' in q: print((p/'applied.json').read_text())
   elif 'to_regclass' in q: print(cfg.get('schema','t'))
   elif 'pg_tables' in q: print('["fixture"]')
   elif 'pg_sequences' in q: print('[]')
@@ -131,6 +142,13 @@ elif a[0]=='compose':
   write(inputs,{...cfg,image:'latest'});fails(/published synchronizer image/,'enable');
   write(inputs,cfg);opts.schema='f';fails(/Upgrade the application/,'enable');delete opts.schema;
   opts.existing='1';fails(/Recover the existing archive/,'enable');delete opts.existing;
+  opts.login_failure='db';fails(/verify the synchronizer login.*mytikas_public/,'enable');
+  assert(!calls().some(c=>c.args.at(-1)==='preflight'));
+  delete opts.login_failure;
+  opts.bad_grants='archive-db';fails(/incorrect privileges on mytikas_archive/,'enable');
+  assert.equal(read(overlay).services.app.environment.ADDON_SUBMISSIONS_ENABLED,'0');
+  assert(!calls().some(c=>c.args.includes('up')&&c.args.at(-1)==='synchronizer'));
+  delete opts.bad_grants;
   opts.preflight_failure=true;fails(/operation failed/,'enable');
   assert.equal(read(overlay).services.app.environment.ADDON_SUBMISSIONS_ENABLED,'0');
   assert(!calls().some(c=>c.args.includes('up')&&c.args.at(-1)==='synchronizer'));
@@ -144,6 +162,12 @@ elif a[0]=='compose':
   assert.equal(read(overlay).services.app.environment.ADDON_SUBMISSIONS_ENABLED,'1');
   const sequence=calls();
   assert.equal(sequence.filter(c=>c.has_role_password && c.args.includes('psql')).length,2);
+  for(const service of ['db','archive-db']) {
+    const probe=sequence.find(c=>c.args.includes('PGPASSWORD') && c.args.includes(service));
+    assert(probe);
+    assert.equal(probe.args[probe.args.indexOf('-h')+1],service);
+    assert.equal(probe.args[probe.args.indexOf('-U')+1],'mytikas_sync');
+  }
   const preflight=sequence.findIndex(c=>c.args.at(-1)==='preflight');
   const workerStart=sequence.findIndex(c=>c.args.includes('up')&&c.args.at(-1)==='synchronizer');
   const webStart=sequence.findIndex(c=>c.args.includes('up')&&c.args.at(-1)==='app');

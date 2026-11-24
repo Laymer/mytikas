@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { createPrivateKey, randomBytes, randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Machine } from './machine/core.mjs';
 import { fileDigest } from './machine/archive.mjs';
 import { backupForRollout } from './addon-rollout-backup.mjs';
@@ -45,12 +45,37 @@ function settings() {
   check(createPrivateKey(fs.readFileSync(input.GITHUB_APP_PRIVATE_KEY_FILE)).asymmetricKeyType === 'rsa', 'GitHub App requires an RSA private key.');
   return input;
 }
-function grant(machine, deployment, service, password, archive) {
+export function provisionSyncRole(machine, deployment, service, password, archive) {
   const database = archive ? 'mytikas_archive' : 'mytikas_public';
   machine.dc(deployment, ['exec','-T','-e','SYNC_PASSWORD',service,'psql','-X','-q','-U',database,'-d',database,'-v','ON_ERROR_STOP=1','-v','archive='+archive,'-f','-'], {
+    stdio:['pipe','pipe','pipe'],
     input: fs.readFileSync(join(root,'scripts','addon-sync-grants.sql')),
     env: {...machine.env, SYNC_PASSWORD:password}
   });
+
+  // Connect over the same network and as the same role as the worker. An empty
+  // stdin is a successful psql script, so the owner's exit code is insufficient.
+  const privileges = archive ? `
+    has_table_privilege('public.archives','SELECT') AND has_table_privilege('public.archives','INSERT')
+    AND has_sequence_privilege('public.archives_id_seq','USAGE') AND has_sequence_privilege('public.archives_id_seq','SELECT')
+    AND (SELECT bool_and(has_column_privilege('public.archives',col,'UPDATE'))
+         FROM unnest(ARRAY['pr_number','merge_commit','release_id','receipt_checked_at','curseforge_file_id']) AS col)
+    AND NOT has_column_privilege('public.archives','archive','UPDATE')` : `
+    has_table_privilege('public.addon_releases','SELECT') AND has_table_privilege('public.addon_releases','INSERT')
+    AND (SELECT bool_and(has_column_privilege('public.addon_submissions',col,'SELECT'))
+         FROM unnest(ARRAY['id','version','notes','sha256','archive','status','archive_id','pr_number','detail','curseforge_file_id']) AS col)
+    AND (SELECT bool_and(has_column_privilege('public.addon_submissions',col,'UPDATE'))
+         FROM unnest(ARRAY['archive','status','archive_id','pr_number','detail','curseforge_file_id']) AS col)`;
+  const verify = `SELECT current_user = 'mytikas_sync' AND has_schema_privilege('public','USAGE')
+    AND NOT has_schema_privilege('public','CREATE') AND ${privileges}`;
+  let result;
+  try {
+    result=machine.dc(deployment,['exec','-T','-e','PGPASSWORD',service,'psql','-XAtq','-h',service,
+      '-U','mytikas_sync','-d',database,'-v','ON_ERROR_STOP=1','-c',verify],{env:{...machine.env,PGPASSWORD:password}});
+  } catch {
+    throw new Error('Could not verify the synchronizer login and grants on '+database+'.');
+  }
+  check(result==='t','The synchronizer login has incorrect privileges on '+database+'.');
 }
 function recreateWeb(machine,d) {
   machine.dc(d,['rm','--stop','--force','tunnel']);
@@ -100,8 +125,8 @@ async function enable(machine,d,cfg=settings()) {
   machine.dc(d,['run','--rm','--no-deps','-T','-e','ARCHIVE_DATABASE_URL','synchronizer','migrate'],{
     env:{...machine.env,ARCHIVE_DATABASE_URL:'postgres://mytikas_archive:'+owner+'@archive-db/mytikas_archive?sslmode=disable'}
   });
-  grant(machine,d,'db',password,false);
-  grant(machine,d,'archive-db',password,true);
+  provisionSyncRole(machine,d,'db',password,false);
+  provisionSyncRole(machine,d,'archive-db',password,true);
   machine.dc(d,['run','--rm','--no-deps','-T','synchronizer','preflight']);
   machine.dc(d,['up','-d','--no-deps','--wait','--wait-timeout','180','synchronizer'],{timeout:240000});
   overlay.services.app.environment.ADDON_SUBMISSIONS_ENABLED='1';
@@ -339,4 +364,4 @@ async function main() {
     console.log(mode==='enable'?'Synchronizer healthy; moderator submissions enabled.':'Synchronization paused. Archive database retained.');
   } finally {fs.rmdirSync(lock);}
 }
-main().catch(e=>{console.error(e instanceof SyntaxError?'Malformed private settings.':e.message);process.exitCode=1;});
+if (process.argv[1] && import.meta.url===pathToFileURL(process.argv[1]).href) main().catch(e=>{console.error(e instanceof SyntaxError?'Malformed private settings.':e.message);process.exitCode=1;});
