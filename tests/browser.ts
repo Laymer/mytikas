@@ -1,3 +1,4 @@
+import { fightersBrowser } from "./fighters-browser.js";
 import {activateBrowser} from "./browser-activation.js";
 import { chromium, firefox, webkit, expect } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -59,6 +60,7 @@ try {
   await expect(
     applicant.getByRole("heading", { name: "The Ascent of Mytikas" }),
   ).toBeVisible();
+  await fightersBrowser(applicant, h.cfg.origin, () => checkpoint(applicant));
   await checkpoint(applicant);
   await applicant.getByRole("link", { name: "Apply / sign in" }).click();
   await expect(

@@ -6,6 +6,7 @@ execFileSync(process.execPath, ['scripts/build-landing.mjs']);
 assert.deepEqual((await readdir('landing-dist')).sort(), ['.nojekyll', 'assets', 'content.js', 'index.html', 'landing.js', 'style.css']);
 const html = await readFile('landing-dist/index.html', 'utf8');
 assert.equal((html.match(/https:\/\/app.mytikas.monster\/account.html/g) || []).length, 2);
+assert.match(html, /href="https:\/\/app\.mytikas\.monster\/fighters\.html">Our fighters<\/a>/i);
 assert.match(html, /Content-Security-Policy/);
 assert.match(html, /id="availability-retry"/);
 assert.doesNotMatch(html, /<form|runtime.js|href="\//);

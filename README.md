@@ -108,6 +108,7 @@ All mutation requests accept JSON, require the session's `X-CSRF-Token`, and rej
 | Route | Purpose |
 | --- | --- |
 | `GET /api/health` | Database/application readiness |
+| `GET /api/fighters?page=1` | Public Olympus Mytikas armory directory, 25 characters per page, ordered by guild rank and name |
 | `GET /api/auth/me` | Account and CSRF token |
 | `POST /api/auth/register` | Atomic account + first application |
 | `POST /api/auth/login`, `/api/auth/logout` | Session lifecycle |

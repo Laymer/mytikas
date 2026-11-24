@@ -12,6 +12,7 @@ import {
   cancelTokens,
 } from "./email.js";
 import { installRosters, rosterAccess } from "./rosters.js";
+import { createFightersProvider } from "./fighters.js";
 import { schemaReady } from "./migrate.js";
 import { isIP } from "node:net";
 import express, {
@@ -95,6 +96,7 @@ export function createApp(
   pool: Pool,
   cfg: Config,
   verify: Verify = verifyMembership,
+  fighters = createFightersProvider(),
 ) {
   const app = express();
   if (cfg.deploymentProfile === "public" || cfg.deploymentProfile === "cloud") {
@@ -146,6 +148,9 @@ export function createApp(
     }),
   );
   app.get("/api/live", (_req, res) => res.json({ live: true }));
+  app.get("/api/fighters", async (req, res) => {
+    res.json(await fighters(req.query.page));
+  });
   const ready = async (_req: Request, res: Response) => {
     try {
       if (!(await schemaReady(pool))) throw new Error("Schema is not ready");

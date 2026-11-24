@@ -33,6 +33,8 @@ try {
     await page.goto(origin + path);
     await expect(page.locator('#availability')).toContainText('Applications are available');
     await expect(page.getByRole('link', { name: 'Apply / sign in' })).toHaveAttribute('href', 'https://app.mytikas.monster/account.html');
+    await expect(page.getByRole('navigation', {name: 'Main navigation'}).getByRole('link', {name: 'Our fighters'}))
+      .toHaveAttribute('href', 'https://app.mytikas.monster/fighters.html');
     assert.equal(await page.locator('.hero').evaluate(el => getComputedStyle(el).backgroundImage.includes('summit.png')), true);
     state = 'unavailable';
     await page.locator('#availability-retry').click();
