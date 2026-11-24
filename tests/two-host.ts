@@ -84,6 +84,19 @@ try {
   assert.equal((await h.pool.query("SELECT count(*) FROM sessions")).rows[0].count, "0");
   await page.keyboard.press("Tab");
   await expect(page.getByRole("link", { name: "Skip to content" })).toBeFocused();
+  const fightersURL = `${cfg.origin}/fighters.html`;
+  const fightersLink = page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Our fighters" });
+  await expect(fightersLink).toHaveAttribute("href", fightersURL);
+  await page.route(`${cfg.origin}/api/fighters?*`, route => route.fulfill({
+    json: { fighters: [], total: 0, page: 1, pageCount: 1, updatedAt: new Date().toISOString(), stale: false },
+  }));
+  await fightersLink.click();
+  await expect(page).toHaveURL(fightersURL);
+  await expect(page.getByRole("heading", { name: "Our fighters" })).toBeVisible();
+  await expect(page.getByText(/No guild members are visible/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "The summit" })).toHaveAttribute("href", cfg.publicSiteOrigin);
+  await page.goBack();
+  await expect(page.locator("#availability")).toContainText("Applications are available");
   await page.getByRole("link", { name: "Apply / sign in" }).click();
   await expect(page).toHaveURL(`${cfg.origin}/account.html`);
   await page.getByLabel("Email", { exact: true }).nth(1).fill("https-applicant@example.test");
@@ -94,6 +107,11 @@ try {
   await page.getByRole("button", { name: "Create account & apply" }).click();
   await expect(page).toHaveURL(/email.html/);
   await activateBrowser(page,h.pool,cfg.origin,"https-applicant@example.test");
+  await expect(page.locator(".tag")).toHaveText("SUBMITTED");
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Our fighters" }).click();
+  await expect(page).toHaveURL(fightersURL);
+  await expect(page.getByText(/No guild members are visible/)).toBeVisible();
+  await page.goBack();
   await expect(page.locator(".tag")).toHaveText("SUBMITTED");
   const cookie = (await context.cookies()).find(cookie => cookie.name === "mytikas.sid");
   assert.ok(cookie);

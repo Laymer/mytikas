@@ -1,7 +1,7 @@
 /** Preservation check against the reviewed navigation update.
  * Render the fixed reference commit and today's landing artifact in
  * the same Chromium process. Compare header/hero pixels at desktop and mobile
- * sizes. Recruitment availability copy is intentionally outside this preserved
+ * sizes with the requested Fighters link added to the reference navigation. Recruitment availability copy is intentionally outside this preserved
  * region; account failure messages are checked behaviorally below.
  * The reference changes only navigation sizing, casing and responsive spacing;
  * the original hero and artwork remain unchanged.
@@ -52,6 +52,19 @@ try {
     const shots: Record<string, Buffer[]> = {};
     for (const version of ["baseline", "current"]) {
       await page.goto(`${origin}/${version}/`, { waitUntil: "networkidle" });
+      // Apply the single intended navigation change to the reference. Keep the
+      // screenshot comparison for the full header, including mobile wrapping.
+      if (version === "baseline") {
+        await page.locator("header nav").evaluate(nav => {
+          const fighters = document.createElement("a");
+          fighters.textContent = "Our fighters";
+          fighters.href = "/fighters.html";
+          nav.insertBefore(fighters, nav.lastElementChild);
+        });
+      } else {
+        await expect(page.getByRole("navigation", {name: "Main navigation"}).getByRole("link", {name: "Our fighters"}))
+          .toHaveAttribute("href", "https://app.mytikas.test/fighters.html");
+      }
       await page.evaluate(() => document.fonts.ready);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${version}/${name} overflows`);
       shots[version] = [];
@@ -61,7 +74,7 @@ try {
       }
     }
     assert.deepEqual(shots.current, shots.baseline, `${name} header/hero differs from reviewed ${baseline} design`);
-    console.log(`✓ ${name}: current header/hero pixels equal reviewed ${baseline} at ${width}×${height}`);
+    console.log(`✓ ${name}: header with Fighters link and hero pixels match reviewed ${baseline} at ${width}×${height}`);
   }
   await page.goto(`${origin}/account.html`);
   await expect(page.locator("#login")).toBeVisible();

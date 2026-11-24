@@ -134,6 +134,13 @@ try {
         return false;
       }
     });
+    const directory = await fetch(origin + "/api/fighters?page=99");
+    assert.equal(directory.status, 200);
+    assert.equal(directory.headers.get("set-cookie"), null);
+    const page = await directory.json();
+    assert.equal(page.page, 1);
+    assert.deepEqual(page.fighters.map((fighter: { name: string }) => fighter.name),
+      ["Demo Approved", "Demo Armory", "Demo Submitted"]);
   } finally {
     server.child.kill("SIGTERM");
     assert.equal((await server.finished).code, 0);

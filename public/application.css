@@ -276,3 +276,18 @@ dialog {background:#171b23;color:#eee;border:1px solid #b99b59;border-radius:8px
 
 .checksum { overflow-wrap: anywhere; }
 header nav { flex-wrap: wrap; }
+
+.fighter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 12rem), 1fr));
+  gap: 8px;
+  padding: 0;
+  list-style: none;
+}
+.fighter-grid .roster-cell {
+  height: 100%;
+  justify-content: center;
+  overflow-wrap: anywhere;
+}
+.fighter-grid .roster-cell:is(:hover, :focus-visible) { border-color: var(--gold); }
+.fighter-pages { margin-top: 24px; }

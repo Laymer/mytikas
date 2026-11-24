@@ -12,7 +12,7 @@ for (const file of ['style.css', 'content.js', 'landing.js', 'assets/crest.svg',
 const csp = `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src ${origin}; base-uri 'none'; form-action 'none'`;
 let html = await readFile('public/index.html', 'utf8');
 html = html.replace('<head>', `<head><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="application-origin" content="${origin}">`)
-  .replaceAll('href="/account.html"', `href="${origin}/account.html"`)
+  .replace(/href="\/(account|fighters)\.html"/g, `href="${origin}/$1.html"`)
   .replace('content="/assets/summit.png"', 'content="assets/summit.png"')
   .replace('<script src="/runtime.js"></script>', '<script src="landing.js"></script>')
   .replace('</div></section></main>', '<p class="muted" id="availability" role="status">Application availability is unknown. This prototype runs while the guild laptop is online.</p><button class="button" id="availability-retry" type="button">Check availability</button></div></section></main>');
