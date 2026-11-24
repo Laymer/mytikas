@@ -27,7 +27,10 @@ try {
     assert.equal(landing.headers.get('Referrer-Policy'),'no-referrer');
     const text=await landing.text();
     assert.match(text,/organizations\/Mytikas-Monster\/settings\/apps\/new/);
-    assert.match(text,/&quot;public&quot;:true/);
+    const manifest=JSON.parse(text.match(/name="manifest" value="([^"]+)"/)[1].replaceAll('&quot;','"'));
+    assert.equal(manifest.public,true);
+    assert.equal(manifest.url,'https://app.mytikas.monster');
+    assert.deepEqual(manifest.hook_attributes,{url:'https://app.mytikas.monster',active:false});
     const [,state]=text.match(/state=([a-f0-9]{64})/);
     const callback=origin+'/callback?code='+code+'&state=';
     assert.equal((await fetch(callback+'wrong')).status,403);

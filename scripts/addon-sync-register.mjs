@@ -141,7 +141,7 @@ export async function registerApp({dir=join(homedir(),'.mytikas','integrations')
     try {url = new URL(req.url,origin);} catch {res.writeHead(400).end('Invalid request.'); return;}
     if (url.pathname === '/') {
       const manifest = {name, url:homepage, description:'Review website addon submissions and publish their original release ZIP.',
-        hook_attributes:{active:false}, redirect_url:origin+'/callback', public:true, default_permissions:permissions, default_events:[]};
+        hook_attributes:{url:homepage,active:false}, redirect_url:origin+'/callback', public:true, default_permissions:permissions, default_events:[]};
       res.end('<!doctype html><title>Register Mytikas Addon Synchronizer</title><h1>Register Mytikas Addon Synchronizer</h1>' +
         '<p>GitHub will ask you to create this app under Mytikas-Monster. The key stays on this host.</p>' +
         '<form method="post" action="https://github.com/organizations/Mytikas-Monster/settings/apps/new?state=' + state + '">' +
