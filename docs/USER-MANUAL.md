@@ -215,4 +215,4 @@ For a joined member, administrators can enter a review note and select **Remove 
 
 Open **Mytikas Addon** to download public files. Signing in with an eligible member account also shows private files and official Olympus releases.
 
-Administrators can use the **Publish** sidebar. Choose files or a folder, select who can download them, and click **Publish files**. Choose **Olympus release** when publishing the guild addon by version. The site reads the version from the ZIP. Both upload modes offer **Skip checksum verification** for the selected upload.
+Administrators can use the **Publish** sidebar. Choose files or a folder, select who can download them, and click **Publish files**. Choose **Olympus release** to submit an installable ZIP for review. Enter the stable version shown in its addon manifest and describe the changes players will see. Use **Refresh status** to find the pull request, GitHub release and CurseForge file ID as they become available. Members can download the original ZIP after publication. Both upload modes offer **Skip checksum verification** for the selected upload.

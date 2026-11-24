@@ -1,6 +1,6 @@
 import { addonDownloadsPaused, installMember, membershipDecisionsPaused, requireMembershipDecisionsOpen } from "./member.js";
 import { addonFilesUploadPath, installAddonFiles } from "./addon-files.js";
-import { addonUploadPath, installAddonUpload } from "./addon-upload.js";
+import { addonUploadPath, addonSubmissionsEnabled, installAddonUpload } from "./addon-upload.js";
 import { eligibleSql } from "./addon.js";
 import { blocked, moderationLock } from "./blacklist.js";
 import {
@@ -296,6 +296,7 @@ export function createApp(
       activated: !!req.user,
       membershipDecisionsPaused: membershipDecisionsPaused(),
       addonDownloadsPaused: downloadsPaused,
+      addonSubmissionsEnabled: addonSubmissionsEnabled(),
       canDownloadAddon: !downloadsPaused && req.user ? !!(await pool.query(eligibleSql,[req.user.id])).rowCount : false,
       canViewRosters: req.user ? await rosterAccess(pool, req.user.id) : false,
       canEditRosters: req.user?.role === "ADMIN",

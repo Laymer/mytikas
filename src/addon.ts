@@ -1,7 +1,8 @@
 import Zip from "adm-zip";
 import { createHash } from "node:crypto";
 import { crc32, inflateRawSync } from "node:zlib";
-import type { Pool } from "./db.js";
+import { transaction, type Pool } from "./db.js";
+import type { PoolClient } from "pg";
 
 export const addonArchiveLimit = 8_000_000;
 export const stableVersion =
@@ -284,6 +285,10 @@ async function downloadRelease(
   if (bytes.length !== asset.size) throw new Error("Incomplete release asset");
   return { bytes, hash: validateArchive(bytes, version, asset.digest) };
 }
+// Serialize version reservations with legacy GitHub imports in the application DB.
+export async function lockAddonVersion(client: PoolClient, version: string) {
+  await client.query("SELECT pg_advisory_xact_lock(7284, hashtext($1))", [version]);
+}
 export async function syncReleases(pool: Pool) {
   const token = process.env.ADDON_RELEASE_TOKEN;
   if (!token) return;
@@ -318,7 +323,7 @@ export async function syncReleases(pool: Pool) {
       const version = r.tag_name.slice(1);
       if (
         (
-          await pool.query("SELECT 1 FROM addon_releases WHERE version=$1", [
+          await pool.query("SELECT 1 FROM addon_releases WHERE version=$1 UNION ALL SELECT 1 FROM addon_submissions WHERE version=$1", [
             version,
           ])
         ).rowCount
@@ -333,10 +338,16 @@ export async function syncReleases(pool: Pool) {
           error instanceof Error ? error : new Error("Release unavailable");
         continue;
       }
-      await pool.query(
-        "INSERT INTO addon_releases VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING",
-        [version, r.published_at, r.body || "", verified.hash, verified.bytes],
-      );
+      await transaction(pool, async (client) => {
+        await lockAddonVersion(client, version);
+        await client.query(
+          `INSERT INTO addon_releases(version,published_at,notes,sha256,archive)
+           SELECT $1::text,$2::timestamptz,$3::text,$4::text,$5::bytea WHERE NOT EXISTS
+             (SELECT 1 FROM addon_submissions WHERE version=$1)
+           ON CONFLICT (version) DO NOTHING`,
+          [version, r.published_at, r.body || "", verified.hash, verified.bytes],
+        );
+      });
     }
     if (list.length < 100) break;
   }
