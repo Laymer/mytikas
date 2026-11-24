@@ -107,12 +107,12 @@ During a moderation backfill, set `MEMBERSHIP_DECISIONS_PAUSED=1` on the web and
 
 Recreate the affected services and recreate the tunnel last because it shares the web service's network namespace. Check `membershipDecisionsPaused`, `addonDownloadsPaused` and the signed-in account's `canDownloadAddon` on `/api/auth/me`. Registration, email verification, revisions, review history and moderation imports remain available. Restore membership decisions by setting their flag to `0` after the reviewed import has caught up.
 
-### Publish a private addon release
+### Publish addon files and submit an Olympus release
 
 Sign in as a website administrator and open the **Publish** sidebar on **Mytikas Addon**.
 
 - Choose **Addon files** to upload a single file of any type, several files, or a folder. Choose **Private** for eligible members or **Public** for anyone with the link. Private is selected initially. The limit is 128 files and 8,000,000 bytes total. A single file downloads in its original format. Folders and multi-file selections download together as a ZIP.
-- Choose **Olympus release** for the official member-only addon. Select the installable ZIP containing the `OlympusMytikas/` directory. The site reads the stable version from `OlympusMytikas.toc`. Existing versions stay available. To change a published release, increment its manifest version and upload the new archive.
+- Choose **Olympus release**, select the installable ZIP containing the `OlympusMytikas/` directory, enter the stable version from `OlympusMytikas.toc` and describe the changes players will see. **Submit for review** reserves that version. Follow the pull request from **Submission history**. After maintainers merge it and GitHub publishes the original ZIP, eligible website members can download it.
 - Checksum comparison is on by default. **Skip checksum verification** omits the browser checksum comparison for that upload. Every published download still displays the SHA-256 of the stored bytes. Olympus ZIPs also undergo manifest and layout validation.
 
-Use **Make private** to restrict future downloads of a public file. Copies already downloaded remain with their recipients. Generic uploads and managed releases are stored in the deployment database and travel with backups and host transfers. The worker can also import stable Olympus releases using its read-only GitHub integration.
+Use **Make private** to restrict future downloads of a public file. Copies already downloaded remain with their recipients. Generic uploads and member downloads reside in the application database. The synchronizer keeps the submitted original in a dedicated archive database. Restore both databases together when moving an enabled deployment. The existing read-only GitHub importer can still import stable Olympus releases with unreserved versions. [Synchronizer deployment and backup guide](ADDON-SYNCHRONIZER.md)

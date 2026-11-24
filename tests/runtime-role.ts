@@ -42,6 +42,14 @@ try {
   const headers={Cookie:admin.cookie,Origin:cfg.origin,'X-CSRF-Token':admin.csrf};
   const uploaded=await fetch(cfg.origin+'/api/admin/addon-files',{method:'POST',headers:{...headers,'X-Upload-ID':publishedId},body:form});
   assert.equal(uploaded.status,201);assert.equal((await uploaded.json()).sha256,checksum);
+  // Staging credentials can reserve versions and read progress, but cannot mark a release published.
+  const submission = await pool.query(
+    "INSERT INTO addon_submissions(version,notes,sha256,archive,submitted_by) VALUES ('1.2.3','Updated guide',$1,$2,$3) RETURNING id,version,status",
+    [checksum,content,h.admin.id],
+  );
+  assert.equal(submission.rows[0].status,"queued");
+  for (const sql of ["UPDATE addon_submissions SET status='published'", "SELECT archive FROM addon_submissions", "DELETE FROM addon_submissions"])
+    await assert.rejects(pool.query(sql), e => (e as {code:string}).code==='42501');
   const changed=await fetch(cfg.origin+'/api/admin/addon-files/'+publishedId+'/visibility',{
     method:'PATCH',headers:{...headers,'Content-Type':'application/json'},body:JSON.stringify({visibility:'private'}),
   });

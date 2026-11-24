@@ -28,3 +28,8 @@ GRANT SELECT, INSERT, UPDATE ON integration_health TO :"runtime_role";
 -- Admins may change visibility after publication. The bytes remain immutable.
 GRANT SELECT, INSERT ON addon_files TO :"runtime_role";
 GRANT UPDATE (visibility) ON addon_files TO :"runtime_role";
+-- The frontend stages new archives and reads submission progress.
+GRANT INSERT (version, notes, sha256, archive, submitted_by),
+  SELECT (id, version, notes, sha256, created_at, status, archive_id, pr_number, detail, curseforge_file_id)
+  ON addon_submissions TO :"runtime_role";
+GRANT USAGE ON SEQUENCE addon_submissions_id_seq TO :"runtime_role";

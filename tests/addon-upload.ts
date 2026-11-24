@@ -15,6 +15,7 @@ const route = "/api/admin/addon/releases",
 const bytes = packageZip(version);
 const sha = (archive: Buffer) =>
   createHash("sha256").update(archive).digest("hex");
+const previousGate = process.env.ADDON_SUBMISSIONS_ENABLED;
 const formerPause = process.env.MEMBERSHIP_DECISIONS_PAUSED;
 async function upload(
   actor: Client,
@@ -28,6 +29,7 @@ async function upload(
     Origin: h.cfg.origin,
     "Content-Type": "application/zip",
     "X-Addon-Version": version,
+    "X-Addon-Notes": "Player-visible fixes",
     "X-Addon-SHA256": sha(archive),
   });
   for (const [name, value] of Object.entries(overrides)) {
@@ -54,6 +56,14 @@ try {
   ] as const) {
     assert.equal((await upload(client)).status, status);
   }
+  const history = "/api/admin/addon/submissions";
+  assert.equal((await anonymous.request(history)).status, 401);
+  assert.equal((await moderator.request(history)).status, 403);
+  assert.equal((await applicant.request(history)).status, 403);
+  delete process.env.ADDON_SUBMISSIONS_ENABLED;
+  assert.equal((await upload(admin)).status, 503);
+  process.env.ADDON_SUBMISSIONS_ENABLED = "1";
+  assert.equal((await upload(admin, bytes, {"X-Addon-Version": undefined})).status, 400);
   for (const headers of [
     { "X-CSRF-Token": "" },
     { Origin: "https://elsewhere.example" },
@@ -84,7 +94,7 @@ try {
       400,
     );
   }
-  for (const notes of ["%E0%A4", "%00", "a".repeat(2049)]) {
+  for (const notes of [undefined, "", "%20%0A", "%E0%A4", "%00", "a".repeat(2049)]) {
     assert.equal(
       (await upload(admin, bytes, { "X-Addon-Notes": notes })).status,
       400,
@@ -110,7 +120,7 @@ try {
     400,
   );
   assert.equal((await upload(admin, Buffer.alloc(8_000_001))).status, 413);
-  const detected = { "X-Addon-Version": undefined };
+  const detected = { "X-Addon-Version": version };
   const skipped = {
     ...detected,
     "X-Addon-Checksum-Mode": "skip",
@@ -133,7 +143,7 @@ try {
       { ...skipped, "X-Addon-Version": "3.2.1" },
       /does not match.*2\.3\.4/,
     ],
-    [packageZip("1.0.0"), skipped, /1\.0\.0 requires the original/],
+    [packageZip("1.0.0"), { ...skipped, "X-Addon-Version": "1.0.0" }, /1\.0\.0 requires the original/],
     [
       packageZip(version, (z) => z.deleteFile(prefix + "OlympusMytikas.toc")),
       skipped,
@@ -157,55 +167,52 @@ try {
   );
 
   process.env.MEMBERSHIP_DECISIONS_PAUSED = "1";
-  const notes = "Δοκιμή\n50% complete 🔧",
+  const notes = "  Δοκιμή\n50% complete 🔧  ",
     created = await upload(admin, bytes, {
       ...detected,
       "X-Addon-Notes": encodeURIComponent(notes),
     });
-  assert.equal(created.status, 201);
+  assert.equal(created.status, 202);
   assert.match(created.headers.get("cache-control")!, /no-store/);
   const metadata = await created.json();
-  assert.deepEqual(Object.keys(metadata).sort(), [
-    "notes",
-    "published_at",
-    "sha256",
-    "version",
-  ]);
+  const statusUrl = created.headers.get("location");
+  assert.equal(statusUrl, history + "/" + metadata.id);
+  assert.deepEqual((await admin.request(statusUrl!)).data, metadata);
+  assert.equal((await applicant.request(statusUrl!)).status, 403);
+  assert.equal((await admin.request(history + "/0")).status, 404);
+  assert.equal((await admin.request(history + "/9223372036854775808")).status, 404);
+  assert.equal((await admin.request(history + "/10000")).status, 404);
+  assert.equal(metadata.status, "queued");
   assert.equal(metadata.version, version);
   assert.equal(metadata.notes, notes);
   assert.equal(metadata.sha256, sha(bytes));
-  assert.ok(Number.isFinite(Date.parse(metadata.published_at)));
+  assert.equal(metadata.archive_id, null);
+  assert.ok(Number.isFinite(Date.parse(metadata.created_at)));
+  assert.equal("archive" in metadata, false);
+  assert.deepEqual((await admin.request(history)).data, [metadata]);
   delete process.env.MEMBERSHIP_DECISIONS_PAUSED;
+  assert.deepEqual((await applicant.request("/api/addon")).data, []);
+  assert.equal((await applicant.request("/api/addon/" + version)).status, 404);
+  const retry = await upload(admin, bytes, { ...skipped, "X-Addon-Notes": encodeURIComponent(notes) });
+  assert.equal(retry.status, 200);
+  assert.deepEqual(await retry.json(), metadata);
+  assert.equal((await upload(admin)).status, 409); // conflicting notes
   const alternative = packageZip(version, (zip) =>
-    zip.updateFile(
-      prefix + "Bootstrap.lua",
-      Buffer.from("-- Different packaged bytes"),
-    ),
-  );
-  const duplicate = await upload(admin, bytes, skipped);
-  assert.equal(duplicate.status, 409);
-  assert.equal(
-    (await duplicate.json()).error,
-    "Version " + version + " has already been published.",
+    zip.updateFile(prefix + "Bootstrap.lua", Buffer.from("-- Different packaged bytes")),
   );
   assert.equal((await upload(admin, alternative)).status, 409);
-  assert.deepEqual((await applicant.request("/api/addon")).data, [metadata]);
-  const downloaded = await fetch(h.cfg.origin + "/api/addon/" + version, {
-    headers: { Cookie: applicant.cookie },
-  });
-  assert.equal(downloaded.status, 200);
-  assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()), bytes);
-  assert.equal((await anonymous.request("/api/addon/" + version)).status, 401);
+  const stored = (await h.pool.query("SELECT submitted_by, archive FROM addon_submissions WHERE id=$1", [metadata.id])).rows[0];
+  assert.equal(stored.submitted_by, h.admin.id);
+  assert.deepEqual(stored.archive, bytes);
+  await h.pool.query("INSERT INTO addon_releases VALUES ('1.1.2',now(),'Legacy',$1,$2)", [sha(bytes), bytes]);
+  assert.equal((await upload(admin, packageZip("1.1.2"), { "X-Addon-Version": "1.1.2" })).status, 409);
+  assert.equal((await applicant.request("/api/addon")).data.length, 1);
   const noComparison = packageZip("2.3.8");
-  const noComparisonResponse = await upload(admin, noComparison, skipped);
-  assert.equal(noComparisonResponse.status, 201);
-  const published = await noComparisonResponse.json();
-  assert.equal(published.version, "2.3.8");
-  assert.equal(published.sha256, sha(noComparison));
-  const copied = await fetch(h.cfg.origin + "/api/addon/2.3.8", {
-    headers: { Cookie: applicant.cookie },
-  });
-  assert.deepEqual(Buffer.from(await copied.arrayBuffer()), noComparison);
+  const noComparisonResponse = await upload(admin, noComparison, { ...skipped, "X-Addon-Version": "2.3.8" });
+  assert.equal(noComparisonResponse.status, 202);
+  const bypassedComparison = await noComparisonResponse.json();
+  assert.equal(bypassedComparison.sha256, sha(noComparison));
+  assert.ok(BigInt(bypassedComparison.id) > BigInt(metadata.id));
 
   const racingVersion = "2.3.5",
     racingBytes = packageZip(racingVersion);
@@ -217,11 +224,11 @@ try {
       }),
     ),
   );
-  assert.deepEqual(racers.map((r) => r.status).sort(), [201, 409]);
-  const winner = await racers.find((r) => r.status === 201)!.json();
+  assert.deepEqual(racers.map((r) => r.status).sort(), [202, 409]);
+  const winner = await racers.find((r) => r.status === 202)!.json();
   assert.equal(
     (
-      await h.pool.query("SELECT notes FROM addon_releases WHERE version=$1", [
+      await h.pool.query("SELECT notes FROM addon_submissions WHERE version=$1", [
         racingVersion,
       ])
     ).rows[0].notes,
@@ -267,19 +274,20 @@ try {
             "X-Addon-Notes": "Uploaded",
           })
         ).status,
-        201,
+        202,
       );
       return new Response(new Uint8Array(upstream));
     };
     await syncReleases(h.pool);
     const afterSync = (
       await h.pool.query(
-        "SELECT notes,archive FROM addon_releases WHERE version=$1",
+        "SELECT notes,archive FROM addon_submissions WHERE version=$1",
         [shared],
       )
     ).rows[0];
     assert.equal(afterSync.notes, "Uploaded");
     assert.deepEqual(afterSync.archive, uploaded);
+    assert.equal((await h.pool.query("SELECT 1 FROM addon_releases WHERE version=$1", [shared])).rowCount, 0);
   } finally {
     globalThis.fetch = oldFetch;
     if (oldToken === undefined) delete process.env.ADDON_RELEASE_TOKEN;
@@ -313,7 +321,7 @@ try {
     assert.equal(
       (
         await h.pool.query(
-          "SELECT version FROM addon_releases WHERE version=$1",
+          "SELECT version FROM addon_submissions WHERE version=$1",
           [next],
         )
       ).rowCount,
@@ -329,5 +337,7 @@ try {
 } finally {
   if (formerPause === undefined) delete process.env.MEMBERSHIP_DECISIONS_PAUSED;
   else process.env.MEMBERSHIP_DECISIONS_PAUSED = formerPause;
+  if (previousGate === undefined) delete process.env.ADDON_SUBMISSIONS_ENABLED;
+  else process.env.ADDON_SUBMISSIONS_ENABLED = previousGate;
   await h.stop();
 }

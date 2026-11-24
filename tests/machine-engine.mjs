@@ -21,27 +21,27 @@ class Engine extends Machine {
       if(this.missingVolume)throw new Error('Previous volume absent');
       return JSON.stringify([{Name:args[2]}]);
     }
-    if(args[0]==='image'&&args[1]==='inspect')return JSON.stringify([{Os:'linux',Architecture:'amd64',Size:10}]);
+    if(args[0]==='image'&&args[1]==='inspect')return JSON.stringify([{Id:args[2],Os:'linux',Architecture:'amd64',Size:10}]);
     if(args[0]==='image'&&args[1]==='save'){fs.writeFileSync(args[3],'saved-image-fixture');return '';}
     if(args[0]==='create')return 'f'.repeat(64);
     if(args[0]==='cp'&&args[1].endsWith(':/app/migrations')){fs.mkdirSync(join(args[2],'migrations'));fs.writeFileSync(join(args[2],'migrations/001_test.sql'),sqlText);return '';}
     if(args[0]==='inspect') {
-      const s={'a':'app','b':'worker','c':'db','d':'tunnel'}[args[1][0]];
-      return JSON.stringify([{Image:images[s==='worker'?'app':s],State:{Running:!this.stopped,ExitCode:this.badExit||0,OOMKilled:false},Config:{Labels:{'com.docker.compose.project':d.project},Env:s==='db'?[`POSTGRES_PASSWORD=${c.POSTGRES_PASSWORD}`]:[`DEPLOYMENT_PROFILE=public`,`APP_ORIGIN=https://app.mytikas.monster`,`SESSION_SECRET=${c.SESSION_SECRET}`,'DISCORD_WEBHOOK_URL=',`DATABASE_URL=postgres://mytikas_runtime:${c.RUNTIME_DATABASE_PASSWORD}@db:5432/mytikas_public`]}}]);
+      const s={'a':'app','b':'worker','c':'db','d':'tunnel','e':'archive-db'}[args[1][0]];
+      return JSON.stringify([{Image:s==='archive-db'?(this.archiveImage || images.db):images[s==='worker'?'app':s],State:{Running:!this.stopped,ExitCode:this.badExit||0,OOMKilled:false},Config:{Labels:{'com.docker.compose.project':d.project},Env:s==='db'?[`POSTGRES_PASSWORD=${c.POSTGRES_PASSWORD}`]:[`DEPLOYMENT_PROFILE=public`,`APP_ORIGIN=https://app.mytikas.monster`,`SESSION_SECRET=${c.SESSION_SECRET}`,'DISCORD_WEBHOOK_URL=',`DATABASE_URL=postgres://mytikas_runtime:${c.RUNTIME_DATABASE_PASSWORD}@db:5432/mytikas_public`]}}]);
     }
     if(args[0]==='compose') {
-      const command=args[7],tail=args.slice(8);
+      const pos=args[7]==='-f'?9:7, command=args[pos], tail=args.slice(pos+1);
       if(command==='config'&&tail.includes('json'))return JSON.stringify({services:{app:{image:images.app,environment:{DATABASE_URL:`postgres://mytikas_runtime:${c.RUNTIME_DATABASE_PASSWORD}@db:5432/mytikas_public`,SESSION_SECRET:c.SESSION_SECRET,DISCORD_WEBHOOK_URL:''}},tunnel:{user:`${c.PUBLIC_UID}:${c.PUBLIC_GID}`},db:{environment:{POSTGRES_PASSWORD:c.POSTGRES_PASSWORD},volumes:[{type:'volume',source:'data',target:'/var/lib/postgresql'}]}},volumes:{data:{name:'previous-data'}}});
       if(command==='ps'&&tail.at(-1)==='db'&&this.dbRemoved)return '';
-      if(command==='ps')return ({app:'a',worker:'b',db:'c',tunnel:'d'}[tail.at(-1)]||'a').repeat(64);
+      if(command==='ps')return ({app:'a',worker:'b',db:'c',tunnel:'d','archive-db':'e'}[tail.at(-1)]||'a').repeat(64);
       if(command==='up'&&tail.includes('tunnel')&&this.failTunnel)throw new Error('Recovery tunnel failed');
       if(command==='stop'&&tail.includes('app'))this.stopped=true;
-      if(command==='exec'&&tail.includes('pg_dump'))fs.writeSync(options.stdio[1],'PGDMP-fixture');
+      if(command==='exec'&&tail.includes('pg_dump'))fs.writeSync(options.stdio[1],tail.includes('archive-db')?'PGDMP-archive':'PGDMP-fixture');
       if(command==='exec'&&tail.includes('psql')) {
         const query=tail.at(-1);
         if(query.includes('pg_database_size'))return '100';
         if(query.includes('json_object_agg'))return JSON.stringify(migrations);
-        if(query.includes('pg_tables'))return '["users","sessions"]';
+        if(query.includes('pg_tables'))return tail.includes('archive-db')?'["archives"]':'["users","sessions"]';
         if(query.includes('pg_sequences'))return '[]';
         if(query.includes('count(*)'))return '1:abc';
       }
@@ -58,8 +58,9 @@ class Engine extends Machine {
   }
 }
 const savedFetch=globalThis.fetch;
+const savedProbe=async()=>({ok:true,json:async()=>({ready:true}),headers:{get:()=> 's=x; Secure; HttpOnly; SameSite=Lax'}});
 try {
-  globalThis.fetch=async()=>({ok:true,json:async()=>({ready:true}),headers:{get:()=> 's=x; Secure; HttpOnly; SameSite=Lax'}});
+  globalThis.fetch=savedProbe;
   const machine=new Engine(join(root,'machine'));await machine.prepare();assert.equal(machine.config(d).SESSION_SECRET,c.SESSION_SECRET);
   assert.equal(machine.run(process.execPath,['-e','process.stdout.write("ok")']),'ok');assert.throws(()=>machine.run(process.execPath,['-e','process.exit(1)']),/failed/);
   await machine.publicCheck();await machine.migrate();assert.equal(machine.state.phase,'handed-off');
@@ -101,6 +102,41 @@ try {
   const missing=new Engine(join(root,'previous-missing'));missing.dbRemoved=true;missing.missingVolume=true;
   assert.throws(()=>missing.backupPrevious(d,join(missing.home,'safety.dump')),/volume is unavailable/);
   assert(!missing.calls.some(a=>a.includes('up')||a.includes('pg_dump')),'A missing previous volume must never be initialized');
+  // Rehearse a full paired export and replacing a destination which also keeps archives.
+  globalThis.fetch=savedProbe;
+  const paired=new Engine(join(root,'paired-source'));
+  const overlay=paired.createArchiveOverlay(d,images.db);
+  overlay.services.synchronizer={image:'fixture-sync'};
+  fs.writeFileSync(paired.addonOverlay(d),JSON.stringify(overlay));
+  paired.archiveImage=images.app;
+  await assert.rejects(()=>paired.migrate(),/same PostgreSQL image/);
+  assert(!paired.calls.some(a=>a.includes('stop')));
+  delete paired.archiveImage;
+  await paired.migrate();
+  const transfer=inspectZip(paired.state.export.target);
+  assert.equal(transfer.manifest.format,2);
+  assert.notEqual(transfer.manifest.archiveFingerprint,transfer.manifest.fingerprint);
+  assert(paired.calls.some(a=>a.includes('pg_restore')&&a.includes('archive-db')));
+  assert(paired.calls.findIndex(a=>a.includes('stop')&&a.includes('synchronizer'))<paired.calls.findIndex(a=>a.includes('pg_dump')));
+  paired.save({phase:'export-stopped'});
+  await paired.recover('source');
+  assert(paired.calls.some(a=>a.includes('volume')&&a.includes('mytikas-public_addon-archive-data')));
+  assert(paired.calls.some(a=>a.includes('up')&&a.at(-1)==='synchronizer'));
+
+  const replacement=new Engine(join(root,'paired-destination'));
+  await replacement.import(paired.state.export.target);
+  assert.equal(replacement.state.phase,'active');
+  const stage=replacement.state.transfer.dir;
+  assert.equal(fs.readFileSync(join(stage,'destination-archive-safety.dump'),'utf8'),'PGDMP-archive');
+  assert.equal(fs.readFileSync(join(stage,'destination-paired-app.dump'),'utf8'),'PGDMP-fixture');
+  assert(replacement.calls.some(a=>a.includes('pg_restore')&&a.includes('archive-db')));
+  assert.equal(replacement.hasSynchronizer(replacement.state.active),false);
+
+  fs.rmSync(paired.addonOverlay(d));
+  const incomplete=new Engine(join(root,'missing-overlay'));
+  incomplete.migrations=()=>({'009_addon_submissions.sql':'fixture'});
+  await assert.rejects(()=>incomplete.migrate(),/required to export existing submissions/);
+  assert(!incomplete.calls.some(a=>a.includes('stop')||a.includes('pg_dump')));
   // Run the real CLI status/help/error paths in a private HOME, never the developer's machine state.
   for(const [args,status] of [[['status'],0],[['help'],0],[['wrong'],1],[['import'],1]]) {
     const r=spawnSync(process.execPath,[resolve('scripts/machine/core.mjs'),...args],{env:{...process.env,HOME:root},encoding:'utf8'});assert.equal(r.status,status,r.stderr);

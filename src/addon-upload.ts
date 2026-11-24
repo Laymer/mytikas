@@ -3,6 +3,7 @@ import {
   AddonArchiveError,
   addonArchiveLimit,
   inspectAddonArchive,
+  lockAddonVersion,
   stableVersion,
 } from "./addon.js";
 import { assertRole } from "./applications.js";
@@ -10,6 +11,10 @@ import { transaction, type Pool } from "./db.js";
 import { HttpError } from "./validation.js";
 
 export const addonUploadPath = "/admin/addon/releases";
+
+export const addonSubmissionsEnabled = () => process.env.ADDON_SUBMISSIONS_ENABLED === "1";
+const submissionsPath = "/api/admin/addon/submissions";
+const metadata = "id, version, notes, sha256, created_at, status, archive_id, pr_number, detail, curseforge_file_id";
 
 export function installAddonUpload(
   app: Express,
@@ -21,10 +26,24 @@ export function installAddonUpload(
     limit: addonArchiveLimit,
     inflate: false,
   });
+  app.get(submissionsPath, admin, async (_req, res) => {
+    const result = await pool.query("SELECT " + metadata + " FROM addon_submissions ORDER BY id DESC");
+    res.json(result.rows);
+  });
+  app.get(submissionsPath + "/:id", admin, async (req, res) => {
+    const id = String(req.params.id);
+    if (!/^[1-9]\d{0,18}$/.test(id) || BigInt(id) > 9223372036854775807n)
+      throw new HttpError(404, "Submission unavailable.");
+    const result = await pool.query("SELECT " + metadata + " FROM addon_submissions WHERE id=$1", [id]);
+    if (!result.rowCount) throw new HttpError(404, "Submission unavailable.");
+    res.json(result.rows[0]);
+  });
   app.post(
     "/api" + addonUploadPath,
     admin,
     (req, res, next) => {
+      if (!addonSubmissionsEnabled())
+        throw new HttpError(503, "Olympus release submissions are paused.");
       if (!req.is("application/zip"))
         throw new HttpError(415, "Send the ZIP as application/zip.");
       readZip(req, res, (error?: { type?: string }) => {
@@ -48,7 +67,7 @@ export function installAddonUpload(
     },
     async (req, res) => {
       const expectedVersion = req.get("X-Addon-Version");
-      if (expectedVersion !== undefined && !stableVersion.test(expectedVersion))
+      if (!expectedVersion || !stableVersion.test(expectedVersion))
         throw new HttpError(400, "Enter a stable version in X.Y.Z format.");
       const checksumMode = req.get("X-Addon-Checksum-Mode") ?? "verify";
       if (checksumMode !== "verify" && checksumMode !== "skip")
@@ -79,6 +98,8 @@ export function installAddonUpload(
           "Release notes must use UTF-8 percent encoding.",
         );
       }
+      if (!notes.trim())
+        throw new HttpError(400, "Describe the player-visible changes in the release notes.");
       if (
         Buffer.byteLength(notes) > 2048 ||
         /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(notes)
@@ -102,20 +123,25 @@ export function installAddonUpload(
       const release = await transaction(pool, async (client) => {
         // A role change may have taken place while the upload was being received.
         await assertRole(client, req.user!.id, true);
+        await lockAddonVersion(client, version);
+        const existing = (await client.query(
+          "SELECT " + metadata + " FROM addon_submissions WHERE version=$1", [version],
+        )).rows[0];
+        if (existing) {
+          if (existing.sha256 === sha256 && existing.notes === notes)
+            return { code: 200, submission: existing };
+          throw new HttpError(409, "Version " + version + " already has a submission with different ZIP bytes or notes.");
+        }
+        if ((await client.query("SELECT 1 FROM addon_releases WHERE version=$1", [version])).rowCount)
+          throw new HttpError(409, "Version " + version + " has already been published.");
         const result = await client.query(
-          `INSERT INTO addon_releases(version,published_at,notes,sha256,archive)
-         VALUES($1,now(),$2,$3,$4) ON CONFLICT (version) DO NOTHING
-         RETURNING version,published_at,notes,sha256`,
-          [version, notes, sha256, req.body],
+          `INSERT INTO addon_submissions(version,notes,sha256,archive,submitted_by)
+           VALUES($1,$2,$3,$4,$5) RETURNING ` + metadata,
+          [version, notes, sha256, req.body, req.user!.id],
         );
-        if (!result.rowCount)
-          throw new HttpError(
-            409,
-            "Version " + version + " has already been published.",
-          );
-        return result.rows[0];
+        return { code: 202, submission: result.rows[0] };
       });
-      res.status(201).json(release);
+      res.location(submissionsPath + "/" + release.submission.id).status(release.code).json(release.submission);
     },
   );
 }

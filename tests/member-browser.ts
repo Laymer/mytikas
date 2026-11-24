@@ -16,6 +16,7 @@ export async function memberBrowser(
   checkpoint: () => Promise<void>,
   measurePage: MeasurePage,
 ) {
+  process.env.ADDON_SUBMISSIONS_ENABLED = "1";
   const url = h.cfg.origin;
   const staffAccount = page.getByRole("heading", {name: "Your staff account"});
   await checkpoint();
@@ -230,26 +231,31 @@ async function publishAddon(adminPage: Page, h: Awaited<ReturnType<typeof harnes
     await page.goto(h.cfg.origin + "/addon.html");
     await publishFiles(page);
     await page.getByLabel("Upload type").selectOption("release");
-    return await submitRelease(page, checkpoint);
+    return await submitRelease(page, h, checkpoint);
   } finally {
     await checkpoint(false);
     await context.close();
   }
 }
 
-async function submitRelease(page: Page, checkpoint: () => Promise<void>) {
+async function submitRelease(page: Page, h: Awaited<ReturnType<typeof harness>>, checkpoint: () => Promise<void>) {
   const version = "1.0.1", archive = packageZip(version);
   const file = {name: "Guild officer’s build (final).zip", mimeType: "application/zip", buffer: archive};
-  const form = page.getByRole("form", {name: "Publish an addon release"});
+  const form = page.getByRole("form", {name: "Submit an Olympus release"});
   const fileField = form.getByLabel("Addon ZIP");
-  const notesField = form.getByLabel("Release notes"), publish = form.getByRole("button", {name: "Publish release"});
+  const notesField = form.getByLabel("Release notes"), publish = form.getByRole("button", {name: "Submit for review"});
   const alert = page.locator("#message");
-  await expect(form.getByLabel("Release version")).toHaveCount(0);
+  const versionField = form.getByLabel("Release version");
+  await versionField.fill(version);
+  await notesField.fill("Player-visible changes");
   await expect(fileField).toHaveAccessibleDescription(/OlympusMytikas\.toc/);
   await fileField.setInputFiles({...file, buffer: Buffer.alloc(8_000_001)});
   await publish.click();
   await expect(alert).toContainText("8 MB");
   await fileField.setInputFiles(file);
+  await notesField.fill("  ");
+  await publish.click();
+  await expect(alert).toContainText("Describe the player-visible changes");
   await notesField.fill("é".repeat(1025));
   await publish.click();
   await expect(alert).toContainText("2,048 UTF-8 bytes");
@@ -274,70 +280,79 @@ async function submitRelease(page: Page, checkpoint: () => Promise<void>) {
     await publish.focus();
     await page.keyboard.press("Enter");
     const headers = (await request).headers();
-    expect(headers["x-addon-version"]).toBeUndefined();
+    expect(headers["x-addon-version"]).toBe(version);
     expect(headers["x-addon-sha256"]).toBe(createHash("sha256").update(archive).digest("hex"));
     await expect(form.getByRole("status")).toContainText("Uploading and verifying " + file.name);
     await expect(publish).toBeDisabled();
   } finally { resume(); }
-  await expect(alert).toHaveText("Published addon version 1.0.1.");
-  await expect(page.getByRole("heading", {name: "Current release · 1.0.1"})).toBeVisible();
-  await expect(page.getByText(notes, {exact: true})).toBeVisible();
-  await expect(page.getByText("SHA-256 " + createHash("sha256").update(archive).digest("hex"), {exact:true})).toBeVisible();
+  await expect(alert).toHaveText(/Version 1.0.1 · Queued/);
+  await expect(page.getByText("Version 1.0.1 · Queued", {exact:true})).toBeVisible();
+  await expect(page.getByRole("link", {name: "Download OlympusMytikas-1.0.1.zip"})).toHaveCount(0);
   await expect(fileField).toHaveValue("");
+
   const skip = form.getByRole("button", {name:"Skip checksum verification"});
   await skip.click();
-  await expect(skip).toHaveAttribute("aria-pressed", "true");
+  await versionField.fill("0.8.0");
+  await notesField.fill("Minor fixes");
   await fileField.setInputFiles({...file, buffer: packageZip("0.8.0")});
   const skipped = page.waitForRequest(r => r.url().endsWith("/api/admin/addon/releases"));
   await publish.click();
   const skipHeaders = (await skipped).headers();
   expect(skipHeaders["x-addon-checksum-mode"]).toBe("skip");
   expect(skipHeaders["x-addon-sha256"]).toBeUndefined();
-  await expect(alert).toHaveText("Published addon version 0.8.0.");
+  await expect(alert).toHaveText(/Version 0.8.0 · Queued/);
   await expect(skip).toHaveAttribute("aria-pressed","false");
-  await fileField.setInputFiles(file);
-  const duplicate = page.waitForResponse(r => r.url().endsWith("/api/admin/addon/releases"));
-  await publish.click();
-  expect((await duplicate).status()).toBe(409);
-  await expect(alert).toHaveText("Version 1.0.1 is already published with this ZIP.");
-  await expect(publish).toBeEnabled();
-  await page.route("**/api/addon", route => route.fulfill({
-    status: 503, json: {error: "Release list temporarily unavailable."},
-  }), {times: 1});
-  await publish.click();
-  await expect(alert).toContainText("Version 1.0.1 has already been published.");
-  await expect(page.locator("#workspace").getByRole("alert")).toHaveText("Release list temporarily unavailable.");
-  await expect(alert).not.toContainText("already published with this ZIP");
 
-  // A different archive for the same manifest version cannot replace the published ZIP.
   const changed = packageZip(version, zip => zip.addFile("OlympusMytikas/README.txt", Buffer.from("Changed package")));
+  await versionField.fill(version);
+  await notesField.fill("Revised release notes");
   await fileField.setInputFiles({...file, buffer: changed});
   await publish.click();
-  await expect(alert).toContainText("Version 1.0.1 has already been published.");
-  await expect(alert).toContainText("update the version in OlympusMytikas.toc");
+  await expect(alert).toContainText("already has a submission with different ZIP bytes or notes");
   await expect(publish).toBeEnabled();
 
-  // The server commits this archive, but the original response never reaches the browser.
-  const recovered = packageZip("0.9.1");
-  await fileField.setInputFiles({...file, buffer: recovered});
+  // The response is lost after staging. A retry returns the same submission.
+  await versionField.fill("0.9.1");
+  await fileField.setInputFiles({...file, buffer: packageZip("0.9.1")});
   await loseUploadResponse(page, "/api/admin/addon/releases");
   const lostResponse = page.waitForResponse(r => r.url().endsWith("/api/admin/addon/releases"));
   await publish.click();
-  expect((await lostResponse).status()).toBe(201);
-  await expect(alert).toHaveText("Version 0.9.1 is already published with this ZIP.");
-  await expect(page.getByRole("heading", {name:"Version 0.9.1"})).toHaveCount(1);
-  await expect(fileField).toHaveValue("");
+  expect((await lostResponse).status()).toBe(202);
+  await expect(alert).toContainText("Submission could not be confirmed.");
+  const replay = page.waitForResponse(r => r.url().endsWith("/api/admin/addon/releases"));
+  await publish.click();
+  expect((await replay).status()).toBe(200);
+  await expect(alert).toHaveText(/Version 0.9.1 · Queued/);
+  await expect(page.getByText("Version 0.9.1 · Queued", {exact:true})).toHaveCount(1);
 
-  await fileField.setInputFiles({...file, buffer: packageZip("0.9.2")});
-  await page.route("**/api/admin/addon/releases", route => route.abort(), {times: 1});
-  await publish.click();
-  await expect(alert).toContainText("Publication could not be confirmed.");
-  await expect(publish).toBeEnabled();
-  await publish.click();
-  await expect(alert).toHaveText("Published addon version 0.9.2.");
+  // Exercise every user-facing phase as the external worker advances the fixture.
+  const refresh = page.getByRole("button", {name: "Refresh status"});
+  await h.pool.query("UPDATE addon_submissions SET status='review', archive_id=51, pr_number=2 WHERE version=$1", [version]);
+  await refresh.click();
+  await expect(page.getByRole("link", {name:"Pull request #2"})).toHaveAttribute("href", "https://github.com/Mytikas-Monster/OlympusMytikas/pull/2");
+  await h.pool.query("UPDATE addon_submissions SET status='blocked', detail='Archive requires review' WHERE version=$1", [version]);
+  await refresh.click();
+  await expect(page.getByText("Archive requires review")).toBeVisible();
+  await transaction(h.pool, async client => {
+    await client.query("INSERT INTO addon_releases(version,published_at,notes,sha256,archive) SELECT version,now(),notes,sha256,archive FROM addon_submissions WHERE version=$1",[version]);
+    await client.query("UPDATE addon_submissions SET status='published',detail=NULL,archive=NULL,curseforge_file_id=77 WHERE version=$1",[version]);
+  });
+  await refresh.click();
+  await expect(page.getByRole("link", {name:"GitHub release v1.0.1"})).toHaveAttribute("href", "https://github.com/Mytikas-Monster/OlympusMytikas/releases/tag/v1.0.1");
+  await expect(page.getByText("CurseForge file #77")).toBeVisible();
   await checkpoint();
+  const destination = await page.getByRole("link", {name:"Submission #1", exact:true}).getAttribute("href");
+  process.env.ADDON_SUBMISSIONS_ENABLED = "0";
+  await page.goto(h.cfg.origin + "/account.html");
+  await page.goto(h.cfg.origin + "/addon.html" + destination);
+  await expect(page.getByText("Olympus release submissions are paused.")).toBeVisible();
+  await expect(page.getByRole("link", {name:"GitHub release v1.0.1"})).toBeVisible();
+  await expect(form).toHaveCount(0);
+  process.env.ADDON_SUBMISSIONS_ENABLED = "1";
   await page.reload();
-  await page.getByLabel("Upload type").selectOption("release");
+  await expect(page.getByRole("heading", {name: "Current release · 1.0.1"})).toBeVisible();
+  await versionField.fill(version);
+  await notesField.fill("Revised release notes");
   await fileField.setInputFiles(file);
   // A sign-out in another tab invalidates an already open upload form.
   const account = await page.context().newPage();
@@ -371,7 +386,7 @@ async function registeredAccountDownload(page: Page, h: Awaited<ReturnType<typeo
     await expect(member.getByRole("link", {name: "guild-setup.lua", exact:true})).toBeVisible();
     await expect(member.getByRole("link", {name: "officer-list.txt", exact:true})).toHaveCount(0);
     await expect(member.getByRole("complementary", {name: "Admin publishing"})).toHaveCount(0);
-    await expect(member.getByRole("form", {name: "Publish an addon release"})).toHaveCount(0);
+    await expect(member.getByRole("form", {name: "Submit an Olympus release"})).toHaveCount(0);
     await checkpoint();
     await member.getByRole("link", {name: "Member Home", exact:true}).click();
     await member.locator("#login-email").fill(email);
@@ -391,7 +406,7 @@ async function registeredAccountDownload(page: Page, h: Awaited<ReturnType<typeo
     ]);
     expect(download.suggestedFilename()).toBe("OlympusMytikas-1.0.1.zip");
     expect(await readFile((await download.path())!)).toEqual(archive);
-    await expect(member.getByRole("form", {name: "Publish an addon release"})).toHaveCount(0);
+    await expect(member.getByRole("form", {name: "Submit an Olympus release"})).toHaveCount(0);
     await checkpoint(false);
   } finally { await context.close(); }
 }
@@ -425,7 +440,7 @@ async function pausedMembership(page: Page, h: Awaited<ReturnType<typeof harness
     await page.getByRole("link", {name: "Mytikas Addon", exact: true}).click();
     await expect(page.getByRole("form", {name: "Publish addon files"})).toBeVisible();
     await page.getByLabel("Upload type").selectOption("release");
-    await expect(page.getByRole("form", {name: "Publish an addon release"})).toBeVisible();
+    await expect(page.getByRole("form", {name: "Submit an Olympus release"})).toBeVisible();
     await expect(page.getByText("Addon downloads are temporarily paused.")).toBeVisible();
     await expect(page.getByRole("link", {name: /^Download OlympusMytikas/})).toHaveCount(0);
     const publicFile = page.getByRole("listitem").filter({hasText:"guild-setup.lua"});
@@ -477,7 +492,7 @@ async function pausedMembership(page: Page, h: Awaited<ReturnType<typeof harness
         await expect(page.getByRole("button", {name: "Check now"})).toHaveCount(0);
         await page.getByRole("link", {name: "Mytikas Addon", exact: true}).click();
         await expect(page.getByRole("link", {name: "Download OlympusMytikas-1.0.1.zip"})).toBeVisible();
-        await expect(page.getByRole("form", {name: "Publish an addon release"})).toHaveCount(0);
+        await expect(page.getByRole("form", {name: "Submit an Olympus release"})).toHaveCount(0);
 
         process.env.MEMBERSHIP_DECISIONS_PAUSED = "0";
         process.env.ADDON_DOWNLOADS_PAUSED = "1";
@@ -527,7 +542,7 @@ async function applicantRevocation(adminPage: Page, h: Awaited<ReturnType<typeof
     await addonTab.click();
     const downloadLink = applicant.getByRole("link", {name: "Download OlympusMytikas-1.0.1.zip"});
     await expect(downloadLink).toBeVisible();
-    await expect(applicant.getByRole("form", {name:"Publish an addon release"})).toHaveCount(0);
+    await expect(applicant.getByRole("form", {name:"Submit an Olympus release"})).toHaveCount(0);
     const bookmark = new URL((await downloadLink.getAttribute("href"))!, url).href;
     const download = await context.request.get(bookmark);
     expect(download.status()).toBe(200);

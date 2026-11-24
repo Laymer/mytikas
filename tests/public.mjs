@@ -19,12 +19,18 @@ fs.appendFileSync(process.env.RECORD,JSON.stringify({args:raw,override:process.e
 if(a.includes('config')&&a.includes('json'))process.stdout.write(fs.readFileSync(process.env.HOME+'/fixture.json'));
 if(a[0]==='run')process.stdout.write(JSON.stringify({activation:!process.env.LEGACY,preflight:!process.env.LEGACY}));
 if(a[0]==='image')process.stdout.write('[{"Os":"linux","Architecture":"amd64"}]');
-if(a[0]==='volume'&&process.env.EXISTING&&!process.env.NO_VOLUME)process.stdout.write('{"Name":"fixture-data"}');
+if(a[0]==='volume'){
+  const volumes=[];
+  if(process.env.EXISTING&&!process.env.NO_VOLUME)volumes.push('fixture-data');
+  if(process.env.ARCHIVE_VOLUME)volumes.push('mytikas-public_addon-archive-data');
+  process.stdout.write(volumes.map(name=>a.includes('json')?JSON.stringify({Name:name}):name).join('\\n'));
+}
+if(a.includes('psql')&&a.at(-1).includes('addon_submissions')&&process.env.SUBMISSIONS)process.stdout.write('t');
 if(a.includes('ps')&&a.includes('-q')&&a.includes('db')&&process.env.EXISTING&&!process.env.REMOVED)process.stdout.write('abc');
 if(a.includes('ps')&&a.includes('-q')&&process.env.WRITERS&&!a.includes('db'))process.stdout.write(a.at(-1));
 if(a[0]==='inspect')process.stdout.write(JSON.stringify([{State:{Running:!process.env.STOPPED},Mounts:[{Type:'volume',Name:'fixture-data',Destination:'/var/lib/postgresql'}],Image:process.env.BAD_WRITER&&a[1]==='worker'?'different':'same',Config:{Env:['SMTP_PASSWORD=fixture']}}]));
 if(a.includes('schema')&&process.env.PENDING)process.exitCode=1;
-if(a.includes('pg_dump')){process.stdout.write('fixture-backup');if(process.env.FAIL_BACKUP)process.exitCode=1;}
+if(a.includes('pg_dump')){process.stdout.write('fixture-backup');if(process.env.FAIL_BACKUP||(process.env.FAIL_ARCHIVE_DUMP&&a.includes('archive-db')))process.exitCode=1;}
 `,{mode:0o700});
   const env = {...process.env, HOME:root, PATH:join(root,'bin')+':'+process.env.PATH, RECORD:record, POSTGRES_PASSWORD:'ambient-override', RUNTIME_DATABASE_PASSWORD:'ambient-runtime-override',SMTP_PASSWORD:'ambient-mail'};
   const run = (...args) => spawnSync(process.execPath,[join(root,'scripts/public.mjs'),...args],{env,encoding:'utf8'});
@@ -63,6 +69,45 @@ if(a.includes('pg_dump')){process.stdout.write('fixture-backup');if(process.env.
   env.FAIL_BACKUP='1';
   assert.equal(run('backup','backups/failure.dump').status,1);
   assert.throws(()=>statSync(join(root,'backups/failure.dump')));
+  const overlayPath=join(root,'.public/addon-sync.json');
+  writeFileSync(overlayPath,JSON.stringify({services:{'archive-db':{}}}),{mode:0o600});
+  assert.equal(run('backup','backups/failed-pair').status,1);
+  assert.throws(()=>statSync(join(root,'backups/failed-pair')));
+  delete env.FAIL_BACKUP;
+  assert.equal(run('backup','backups/paired').status,0);
+  for(const name of ['database.dump','archive.dump'])assert.equal(readFileSync(join(root,'backups/paired',name),'utf8'),'fixture-backup');
+  assert.match(run('backup','backups/paired').stderr,/destination already exists/);
+  writeFileSync(overlayPath,JSON.stringify({services:{'archive-db':{},synchronizer:{}}}));
+  env.WRITERS='1';
+  env.FAIL_ARCHIVE_DUMP='1';
+  writeFileSync(record,'');
+  assert.equal(run('backup','backups/failed-second-dump').status,1);
+  assert.throws(()=>statSync(join(root,'backups/failed-second-dump.partial')));
+  assert.throws(()=>statSync(join(root,'backups/failed-second-dump')));
+  const invocations=()=>readFileSync(record,'utf8').trim().split('\n').map(line=>JSON.parse(line).args);
+  const commands=invocations();
+  const stopped=commands.findIndex(a=>a.includes('stop')&&a.at(-1)==='synchronizer');
+  const appDump=commands.findIndex(a=>a.includes('db')&&a.includes('pg_dump'));
+  const archiveDump=commands.findIndex(a=>a.includes('archive-db')&&a.includes('pg_dump'));
+  const started=commands.findIndex(a=>a.includes('start')&&a.at(-1)==='synchronizer');
+  assert(stopped>=0 && stopped<appDump && appDump<archiveDump && archiveDump<started);
+  delete env.WRITERS;
+  delete env.FAIL_ARCHIVE_DUMP;
+  fixture.volumes['addon-archive-data']={name:'mytikas-public_addon-archive-data'};
+  writeFileSync(join(root,'fixture.json'),JSON.stringify(fixture));
+  assert.match(run('up').stderr,/Retained archive database is unavailable/);
+  env.ARCHIVE_VOLUME='1';
+  writeFileSync(record,'');
+  assert.equal(run('up').status,0);
+  const up=invocations().filter(a=>a.includes('up'));
+  assert.deepEqual(up.map(a=>a.at(-1)),['archive-db','worker','synchronizer','tunnel']);
+  rmSync(overlayPath);
+  assert.match(run('up').stderr,/overlay missing/);
+  assert.match(run('backup','backups/missing-overlay').stderr,/overlay missing/);
+  delete env.ARCHIVE_VOLUME;
+  env.SUBMISSIONS='1';
+  assert.match(run('backup','backups/missing-overlay').stderr,/overlay missing/);
+  delete env.SUBMISSIONS;
   assert.equal(run('down','--volumes').status,1);
   assert.equal(run('logs','--details').status,1);
   const persist=()=>writeFileSync(join(root,'fixture.json'),JSON.stringify(fixture));

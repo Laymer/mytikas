@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import { fileDigest, writeZip, inspectZip, extractZip } from './archive.mjs';
 
 const origin='https://app.mytikas.monster';
-const memberAppFields=['MEMBERSHIP_DECISIONS_PAUSED','ADDON_DOWNLOADS_PAUSED','DISCORD_CLIENT_ID','DISCORD_CLIENT_SECRET','DISCORD_BOT_TOKEN','DISCORD_GUILD_ID','DISCORD_INVITE_URL'];
+const memberAppFields=['MEMBERSHIP_DECISIONS_PAUSED','ADDON_DOWNLOADS_PAUSED','ADDON_SUBMISSIONS_ENABLED','DISCORD_CLIENT_ID','DISCORD_CLIENT_SECRET','DISCORD_BOT_TOKEN','DISCORD_GUILD_ID','DISCORD_INVITE_URL'];
 const memberWorkerFields=['MEMBERSHIP_DECISIONS_PAUSED','DISCORD_BOT_TOKEN','DISCORD_GUILD_ID','DISCORD_BLACKLIST_CHANNEL_ID','ADDON_RELEASE_TOKEN'];
 const integrationEnv=(keys,config)=>Object.fromEntries(keys.filter(k=>config[k]).map(k=>[k,config[k]]));
 const fields=[...memberAppFields,...memberWorkerFields,'POSTGRES_PASSWORD','RUNTIME_DATABASE_PASSWORD','SESSION_SECRET','DISCORD_WEBHOOK_URL','PUBLIC_UID','PUBLIC_GID','EMAIL_OUTBOX_KEY','SMTP_HOST','SMTP_PORT','SMTP_USER','SMTP_PASSWORD','EMAIL_FROM','MYTIKAS_IMAGE'];
@@ -29,6 +29,7 @@ export function validateConfiguration(c) {
   ensure(typeof c.DISCORD_WEBHOOK_URL==='string'&&(c.DISCORD_WEBHOOK_URL===''||/^https:\/\/(?:discord.com|discordapp.com)\/api\/webhooks\/[0-9]+\/[A-Za-z0-9_-]+$/.test(c.DISCORD_WEBHOOK_URL)),'Invalid Discord webhook');
   ensure(typeof c.tunnelToken==='string'&&/^[A-Za-z0-9+/=_-]{20,16384}$/.test(c.tunnelToken),'Invalid tunnel connector token');
   for(const key of [...memberAppFields,...memberWorkerFields]) if(c[key]) ensure(typeof c[key]==='string'&&!/[\r\n\0]/.test(c[key]),'Invalid integration configuration');
+  if(c.ADDON_SUBMISSIONS_ENABLED)ensure(['0','1'].includes(c.ADDON_SUBMISSIONS_ENABLED),'Invalid addon submission setting');
   if(c.ADDON_DOWNLOADS_PAUSED)ensure(['0','1'].includes(c.ADDON_DOWNLOADS_PAUSED),'Invalid addon download setting');
   if(c.DISCORD_INVITE_URL)ensure(/^https:\/\/(?:discord\.gg\/|discord\.com\/invite\/)[a-zA-Z0-9_-]+$/.test(c.DISCORD_INVITE_URL),'Invalid Discord invite');
   if(c.EMAIL_OUTBOX_KEY)ensure(/^[a-f0-9]{64}$/i.test(c.EMAIL_OUTBOX_KEY),'Invalid email encryption key');
@@ -38,12 +39,15 @@ export function validateConfiguration(c) {
 }
 export function validateTransfer(info) {
   const m=info.manifest;
-  ensure(m?.format===1&&/^[a-f0-9]{32}$/.test(m.lineage)&&/^[a-f0-9]{32}$/.test(m.id)&&Number.isSafeInteger(m.generation)&&m.generation>0&&/^[a-f0-9]{40}$/.test(m.commit),'Invalid transfer identity');
+  ensure([1,2].includes(m?.format)&&/^[a-f0-9]{32}$/.test(m.lineage)&&/^[a-f0-9]{32}$/.test(m.id)&&Number.isSafeInteger(m.generation)&&m.generation>0&&/^[a-f0-9]{40}$/.test(m.commit),'Invalid transfer identity');
   ensure(m.platform==='linux/amd64','Transfer requires linux/amd64 images');
   ensure(m.images&&['app','db','tunnel'].every(k=>/^sha256:[a-f0-9]{64}$/.test(m.images[k])),'Invalid image identities');
   ensure(m.migrations&&Object.keys(m.migrations).length>0&&Object.entries(m.migrations).every(([n,h])=>/^[a-zA-Z0-9_-]+\.sql$/.test(n)&&/^[a-f0-9]{64}$/.test(h)),'Invalid migration checksums');
   ensure(typeof m.fingerprint==='string'&&/^[a-f0-9]{64}$/.test(m.fingerprint),'Invalid data fingerprint');
   for(const e of info.entries.filter(e=>e.name!=='manifest.json'))ensure(m.files?.[e.name]?.sha256===e.sha256&&m.files[e.name].size===e.size,'Transfer file hash mismatch');
+  const paired=info.entries.some(e=>e.name==='archive.dump');
+  ensure((m.format===2)===paired && (!paired || /^[a-f0-9]{64}$/.test(m.archiveFingerprint)), 'Archive database transfer is incomplete');
+  ensure(paired || info.configuration.ADDON_SUBMISSIONS_ENABLED!=='1','Archive database required for enabled submissions');
   validateConfiguration(info.configuration);return m;
 }
 function privateDirectory(dir) {fs.mkdirSync(dir,{recursive:true,mode:0o700});ensure(fs.lstatSync(dir).isDirectory()&&(fs.statSync(dir).mode&0o077)===0,'Machine directories must be private (700)');}
@@ -76,7 +80,47 @@ export class Machine {
     ensure(fs.existsSync(path.join(this.root,'compose.public.yaml')),'No managed deployment or public checkout here');
     return {root:this.root,project:'mytikas-public',compose:path.join(this.root,'compose.public.yaml'),env:path.join(this.root,'.env.public'),token:path.join(this.root,'.public/tunnel-token')};
   }
-  dc(d,args,options) {return this.docker(['compose','--project-name',d.project,'--env-file',d.env,'-f',d.compose,...args],{cwd:d.root,...options});}
+  addonOverlay(d) { return path.join(d.root,'.public','addon-sync.json'); }
+  addons(d) { return Boolean(d?.root && fs.existsSync(this.addonOverlay(d))); }
+  dc(d,args,options) {
+    const files=['-f',d.compose];
+    if(this.addons(d))files.push('-f',this.addonOverlay(d));
+    return this.docker(['compose','--project-name',d.project,'--env-file',d.env,...files,...args],{cwd:d.root,...options});
+  }
+  // The destination restores archive storage before receiving a host-local GitHub key.
+  createArchiveOverlay(d,image) {
+    const database = {
+      image,
+      environment: {
+        POSTGRES_USER:'mytikas_archive', POSTGRES_DB:'mytikas_archive',
+        POSTGRES_PASSWORD:crypto.randomBytes(32).toString('hex')
+      },
+      volumes:['addon-archive-data:/var/lib/postgresql'],
+      restart:'unless-stopped',
+      healthcheck: {
+        test:['CMD','pg_isready','-U','mytikas_archive','-d','mytikas_archive'],
+        interval:'3s', timeout:'3s', retries:60
+      }
+    };
+    const overlay = {
+      services:{'archive-db':database, app:{environment:{ADDON_SUBMISSIONS_ENABLED:'0'}}},
+      volumes:{'addon-archive-data':{}}
+    };
+    atomic(this.addonOverlay(d),overlay);
+    return overlay;
+  }
+  hasSynchronizer(d) {return this.addons(d) && !!readJSON(this.addonOverlay(d),{}).services.synchronizer;}
+  requireArchiveVolume(d) {
+    const volume=d.project+'_addon-archive-data';
+    const inspect=JSON.parse(this.docker(['volume','inspect',volume]));
+    ensure(inspect.length===1 && inspect[0].Name===volume,'Missing retained archive volume');
+  }
+  startArchive(d,fresh=false) {
+    if(!this.addons(d))return;
+    if(!fresh)this.requireArchiveVolume(d);
+    this.dc(d,['up','-d','--no-deps','--wait','--wait-timeout','180','archive-db']);
+    if(this.hasSynchronizer(d))this.dc(d,['up','-d','--no-deps','--wait','--wait-timeout','180','synchronizer']);
+  }
   id(d,service) {const id=this.dc(d,['ps','-a','-q',service]);ensure(/^[a-f0-9]{12,64}$/.test(id),'Expected one public service container');return id;}
   inspect(id) {return JSON.parse(this.docker(['inspect',id]))[0];}
   config(d) {
@@ -99,13 +143,14 @@ export class Machine {
     const free=Number(this.docker(['run','--rm','--network','none','--entrypoint','sh',image,'-c',"df -Pk / | awk 'NR==2 {print $4}'"]));
     ensure(Number.isFinite(free)&&free*1024>bytes,'Insufficient Docker engine free disk space');
   }
-  sql(d,query) {return this.dc(d,['exec','-T','db','psql','-X','-A','-t','-U','mytikas_public','-d','mytikas_public','-v','ON_ERROR_STOP=1','-c',query]);}
-  fingerprint(d) {
+  sql(d,query,archive=false) {const database=archive?'mytikas_archive':'mytikas_public';return this.dc(d,['exec','-T',archive?'archive-db':'db','psql','-X','-A','-t','-U',database,'-d',database,'-v','ON_ERROR_STOP=1','-c',query]);}
+  fingerprint(d,archive=false) {
+    const sql=query=>this.sql(d,query,archive);
     // Hash every table row in canonical order, including leases, sessions and history; sequences too.
-    const tables=JSON.parse(this.sql(d,"SELECT coalesce(json_agg(tablename ORDER BY tablename),'[]') FROM pg_tables WHERE schemaname='public'"));
+    const tables=JSON.parse(sql("SELECT coalesce(json_agg(tablename ORDER BY tablename),'[]') FROM pg_tables WHERE schemaname='public'"));
     const h=crypto.createHash('sha256');
-    for(const name of tables) {ensure(/^[a-z_][a-z0-9_]*$/.test(name),'Unexpected table name');h.update(name);h.update(this.sql(d,`SELECT count(*)::text || ':' || md5(coalesce(string_agg(h, '' ORDER BY h),'')) FROM (SELECT md5(row_to_json(t)::text) h FROM "${name}" t) x`));}
-    h.update(this.sql(d,"SELECT coalesce(json_agg(t ORDER BY sequencename)::text,'[]') FROM (SELECT sequencename,last_value,start_value,increment_by,min_value,max_value,cycle FROM pg_sequences WHERE schemaname='public') t"));return h.digest('hex');
+    for(const name of tables) {ensure(/^[a-z_][a-z0-9_]*$/.test(name),'Unexpected table name');h.update(name);h.update(sql(`SELECT count(*)::text || ':' || md5(coalesce(string_agg(h, '' ORDER BY h),'')) FROM (SELECT md5(row_to_json(t)::text) h FROM "${name}" t) x`));}
+    h.update(sql("SELECT coalesce(json_agg(t ORDER BY sequencename)::text,'[]') FROM (SELECT sequencename,last_value,start_value,increment_by,min_value,max_value,cycle FROM pg_sequences WHERE schemaname='public') t"));return h.digest('hex');
   }
   migrations(d) {return JSON.parse(this.sql(d,"SELECT json_object_agg(name,checksum ORDER BY name) FROM migrations"));}
   imageMigrations(image,dir) {
@@ -114,7 +159,7 @@ export class Machine {
     return Object.fromEntries(fs.readdirSync(path.join(dir,'migrations')).filter(n=>n.endsWith('.sql')).sort().map(n=>[n,fileDigest(path.join(dir,'migrations',n)).sha256]));
   }
   equal(a,b,message) {ensure(JSON.stringify(a)===JSON.stringify(b),message);}
-  dump(d,file) {const fd=fs.openSync(file,'wx',0o600);try{this.dc(d,['exec','-T','db','pg_dump','-U','mytikas_public','-d','mytikas_public','-Fc'],{stdio:['ignore',fd,'pipe'],timeout:1800000});fs.fsyncSync(fd);}finally{fs.closeSync(fd);}}
+  dump(d,file,archive=false) {const database=archive?'mytikas_archive':'mytikas_public';const fd=fs.openSync(file,'wx',0o600);try{this.dc(d,['exec','-T',archive?'archive-db':'db','pg_dump','-U',database,'-d',database,'-Fc'],{stdio:['ignore',fd,'pipe'],timeout:1800000});fs.fsyncSync(fd);}finally{fs.closeSync(fd);}}
   backupPrevious(d,file) {
     this.config(d);
     const compose=JSON.parse(this.dc(d,['config','--format','json']));
@@ -131,6 +176,7 @@ export class Machine {
     this.dump(d,file);
   }
   async stop(d) {
+    if(this.hasSynchronizer(d))this.dc(d,['stop','--timeout','60','synchronizer']);
     this.dc(d,['stop','--timeout','45','tunnel']);
     this.dc(d,['stop','--timeout','45','app','worker'],{timeout:100000});
     for(const s of ['app','worker']) {const i=this.inspect(this.id(d,s));ensure(!i.State.Running&&!i.State.OOMKilled&&i.State.ExitCode===0,`${s} did not drain cleanly; export aborted, traffic remains stopped`);}
@@ -150,9 +196,20 @@ export class Machine {
       tunnel:{image:m.images.tunnel,user:`${local.PUBLIC_UID}:${local.PUBLIC_GID}`,network_mode:'service:app',command:['tunnel','--no-autoupdate','run','--token-file','/run/secrets/tunnel_token'],secrets:['tunnel_token'],read_only:true,cap_drop:['ALL'],security_opt:['no-new-privileges:true'],restart:'unless-stopped'}
     },secrets:{tunnel_token:{file:token}},volumes:{data:{}}};
     const escape=v=>typeof v==='string'?v.replaceAll('$',()=>'$$'):Array.isArray(v)?v.map(escape):v&&typeof v==='object'?Object.fromEntries(Object.entries(v).map(([k,x])=>[k,escape(x)])):v;
-    const file=path.join(dir,'compose.json');atomic(file,escape(compose));return {root:dir,project,compose:file,env,token,...(c.MYTIKAS_IMAGE?{imageSelection:c.MYTIKAS_IMAGE}:{})};
+    const file=path.join(dir,'compose.json');atomic(file,escape(compose));const deployment={root:dir,project,compose:file,env,token,...(c.MYTIKAS_IMAGE?{imageSelection:c.MYTIKAS_IMAGE}:{})};
+    if(m.format===2) {
+      const overlay=this.createArchiveOverlay(deployment,m.images.db);
+      overlay['x-initialized']=true;
+      atomic(this.addonOverlay(deployment),overlay);
+    }
+    return deployment;
   }
   async restore(d,dir,c,source) {
+    if(this.addons(d)) {
+      this.startArchive(d,true);
+      const archive=fs.openSync(path.join(dir,'archive.dump'),'r');
+      try {this.dc(d,['exec','-T','archive-db','pg_restore','-U','mytikas_archive','-d','mytikas_archive','--single-transaction','--exit-on-error','--no-owner','--no-privileges'],{stdio:[archive,'pipe','pipe'],timeout:1800000});} finally {fs.closeSync(archive);}
+    }
     this.dc(d,['up','-d','--no-deps','--wait','--wait-timeout','180','db'],{timeout:240000});
     const fd=fs.openSync(path.join(dir,'database.dump'),'r');
     try {this.dc(d,['exec','-T','db','pg_restore','-U','mytikas_public','-d','mytikas_public','--single-transaction','--exit-on-error','--no-owner','--no-privileges'],{stdio:[fd,'pipe','pipe'],timeout:1800000});}finally{fs.closeSync(fd);}
@@ -198,7 +255,13 @@ export class Machine {
     ensure(containers.db.Config.Env.includes(`POSTGRES_PASSWORD=${c.POSTGRES_PASSWORD}`),'Running database credentials differ');
     const images=Object.fromEntries(['app','db','tunnel'].map(s=>[s,containers[s].Image]));let size=0;
     for(const image of Object.values(images)) {const i=JSON.parse(this.docker(['image','inspect',image]))[0];ensure(i.Os==='linux'&&i.Architecture==='amd64','Only linux/amd64 images can move between these machines');size+=i.Size;}
-    const dbSize=Number(this.sql(d,"SELECT pg_database_size('mytikas_public')"));
+    const paired=this.addons(d);
+    ensure(c.ADDON_SUBMISSIONS_ENABLED!=='1'||paired,'The archive database overlay is missing');
+    if(!paired && Object.hasOwn(this.migrations(d),'009_addon_submissions.sql')) {
+      ensure(this.sql(d,'SELECT count(*) FROM addon_submissions')==='0','Archive database required to export existing submissions');
+    }
+    if(paired)ensure(this.inspect(this.id(d,'archive-db')).Image===images.db,'Use the same PostgreSQL image for both databases');
+    const dbSize=Number(this.sql(d,"SELECT pg_database_size('mytikas_public')"))+(paired?Number(this.sql(d,"SELECT pg_database_size('mytikas_archive')",true)):0);
     ensure(size+dbSize*2<0xf0000000,'Transfer may exceed supported 4 GiB ZIP limit');this.space(this.home,3*(size+dbSize)+1024**3);this.engineSpace(images.db,dbSize*3+1024**3);
     const id=crypto.randomBytes(16).toString('hex'),dir=path.join(this.home,'exports',id);privateDirectory(dir);
     const commit=this.state.active?.commit||this.run('git',['-C',d.root,'rev-parse','HEAD']);ensure(/^[a-f0-9]{40}$/.test(commit),'Invalid source commit');
@@ -211,13 +274,14 @@ export class Machine {
     atomic(path.join(d.root,'.public','machine-handoff.json'),{phase:'stopped',state:this.file});
     await this.stop(d);this.save({phase:'export-stopped'});
     this.dump(d,path.join(dir,'database.dump'));const fingerprint=this.fingerprint(d);
-    const m={format:1,id,lineage:this.state.lineage,generation:this.state.highest+1,commit,platform:'linux/amd64',images,migrations,fingerprint,files:{}};
+    if(paired)this.dump(d,path.join(dir,'archive.dump'),true);
+    const m={format:paired?2:1,...(paired?{archiveFingerprint:this.fingerprint(d,true)}:{}),id,lineage:this.state.lineage,generation:this.state.highest+1,commit,platform:'linux/amd64',images,migrations,fingerprint,files:{}};
     const validation=this.writeDeployment(path.join(dir,'validation'),c,m,'mytikas-verify-'+id);
-    try {await this.restore(validation,dir,c,source);this.equal(this.fingerprint(validation),fingerprint,'Isolated restore data fingerprint mismatch');this.equal(this.migrations(validation),migrations,'Isolated restore schema mismatch');}
+    try {await this.restore(validation,dir,c,source);this.equal(this.fingerprint(validation),fingerprint,'Isolated restore data fingerprint mismatch');this.equal(this.migrations(validation),migrations,'Isolated restore schema mismatch');if(paired)this.equal(this.fingerprint(validation,true),m.archiveFingerprint,'Isolated archive restore fingerprint mismatch');}
     finally {this.dc(validation,['down','--volumes']);}
     atomic(path.join(dir,'configuration.json'),c);
     this.docker(['image','save','-o',path.join(dir,'images.tar'),...new Set(Object.values(images))],{timeout:1800000});fs.chmodSync(path.join(dir,'images.tar'),0o600);
-    for(const name of ['database.dump','configuration.json','images.tar']) {const f=fileDigest(path.join(dir,name));m.files[name]={sha256:f.sha256,size:f.size};}
+    for(const name of ['database.dump','configuration.json','images.tar',...(paired?['archive.dump']:[])]) {const f=fileDigest(path.join(dir,name));m.files[name]={sha256:f.sha256,size:f.size};}
     atomic(path.join(dir,'manifest.json'),m);
     const target=path.join(this.home,`mytikas-${new Date().toISOString().replace(/[:.]/g,'-')}-${id}.zip`);
     writeZip(dir,target+'.partial');validateTransfer(inspectZip(target+'.partial'));
@@ -252,10 +316,11 @@ export class Machine {
       this.equal(this.imageMigrations(m.images.app,dir),m.migrations,'Loaded image schema mismatch');
       const sourceMigrations=Object.fromEntries(fs.readdirSync(path.join(source,'migrations')).filter(n=>n.endsWith('.sql')).sort().map(n=>[n,fileDigest(path.join(source,'migrations',n)).sha256]));
       this.equal(sourceMigrations,m.migrations,'Recorded source schema differs from transfer');
-      this.engineSpace(m.images.db,info.entries.find(e=>e.name==='database.dump').size*5+1024**3);
+      this.engineSpace(m.images.db,info.entries.filter(e=>e.name.endsWith('.dump')).reduce((n,e)=>n+e.size,0)*5+1024**3);
       let previous=this.state.active;
       if(!previous&&fs.existsSync(path.join(this.root,'.env.public')))previous=this.deployment();
       if(previous&&this.state.phase!=='handed-off') {
+        if(this.addons(previous))this.requireArchiveVolume(previous);
         this.backupPrevious(previous,path.join(dir,'destination-safety.dump'));
       }
       const next=this.writeDeployment(path.join(dir,'deployment'),c,m,'mytikas-gen-'+m.id);
@@ -263,7 +328,7 @@ export class Machine {
       // Refuse collisions rather than attaching credentials to an existing project/volume.
       ensure(!this.docker(['ps','-aq','--filter',`label=com.docker.compose.project=${next.project}`]),'Destination project already exists');
       ensure(!this.docker(['volume','ls','-q','--filter',`label=com.docker.compose.project=${next.project}`]),'Destination volume already exists');
-      this.save({phase:'import-stopping',previous,transfer:{id:m.id,dir,manifest:m,source,next,writers:false},lineage:m.lineage});
+      this.save({phase:'import-stopping',previous,transfer:{id:m.id,dir,manifest:m,source,next,writers:false,backupArchive:this.state.phase!=='handed-off' && this.addons(previous)},lineage:m.lineage});
     }
     const t=this.state.transfer;
     if(this.state.phase==='import-stopping') {
@@ -271,6 +336,16 @@ export class Machine {
         // A handed-off source has no containers; do not try to stop it again.
         if(this.dc(this.state.previous,['ps','-a','-q','app']))await this.stop(this.state.previous);
       } else if(this.state.previous&&this.dc(this.state.previous,['ps','-a','-q','app']))await this.stop(this.state.previous);
+      if(t.backupArchive) {
+        this.dc(this.state.previous,['up','-d','--no-deps','--no-recreate','--wait','archive-db']);
+        // Snapshot both sides with the old writers drained, including retries after interruption.
+        for(const [name,archive] of [['destination-paired-app.dump',false],['destination-archive-safety.dump',true]]) {
+          const dest=path.join(t.dir,name),temp=dest+'.partial';
+          fs.rmSync(temp,{force:true});
+          this.dump(this.state.previous,temp,archive);
+          fs.renameSync(temp,dest);
+        }
+      }
       this.save({phase:'import-restoring'});
     }
     if(this.state.phase==='import-restoring') {
@@ -278,6 +353,7 @@ export class Machine {
       this.dc(t.next,['down','--volumes']);
       await this.restore(t.next,t.dir,c,t.source);
       this.equal(this.migrations(t.next),m.migrations,'Restored migration checksums differ');this.equal(this.fingerprint(t.next),m.fingerprint,'Restored data fingerprint differs');
+      if(m.format===2)this.equal(this.fingerprint(t.next,true),m.archiveFingerprint,'Restored archive database fingerprint differs');
       this.dc(t.next,['up','-d','--no-deps','--wait','--wait-timeout','180','app'],{timeout:240000});
       // Validate mount permissions as the connector UID using the saved PostgreSQL image.
       this.docker(['run','--rm','--network','none','--user',`${process.getuid()}:${process.getgid()}`,'--mount',`type=bind,src=${t.next.token},dst=/token,readonly`,'--entrypoint','sh',m.images.db,'-c','test -r /token && test -s /token']);
@@ -305,14 +381,14 @@ export class Machine {
       ensure(['export-stopping','export-stopped'].includes(this.state.phase),'Source recovery is allowed only before a usable archive is published');
       const d=this.state.active;
       this.dc(d,['up','-d','--no-deps','--wait','--wait-timeout','180','db','app','worker'],{timeout:240000});
-      this.dc(d,['up','-d','--no-deps','tunnel']);fs.rmSync(path.join(d.root,'.public','machine-handoff.json'),{force:true});this.save({phase:'active'});return;
+      this.startArchive(d);this.dc(d,['up','-d','--no-deps','tunnel']);fs.rmSync(path.join(d.root,'.public','machine-handoff.json'),{force:true});this.save({phase:'active'});return;
     }
     ensure(command==='previous','Usage: recover finish-export|previous|source');
     ensure((this.state.phase.startsWith('import-')||this.state.phase==='recovery-starting')&&!this.state.transfer.writers,'Previous deployment recovery is forbidden after the write barrier; export the destination instead');
     ensure(this.state.previous,'No previous destination deployment recorded');
     this.dc(this.state.transfer.next,['down']);
     this.save({phase:'recovery-starting',highest:Math.max(this.state.highest,this.state.transfer.manifest?.generation||0)});
-    this.dc(this.state.previous,['up','-d','--no-deps','--wait','--wait-timeout','180','db','app','worker'],{timeout:240000});this.dc(this.state.previous,['up','-d','--no-deps','tunnel']);
+    this.dc(this.state.previous,['up','-d','--no-deps','--wait','--wait-timeout','180','db','app','worker'],{timeout:240000});this.startArchive(this.state.previous);this.dc(this.state.previous,['up','-d','--no-deps','tunnel']);
     fs.rmSync(path.join(this.state.previous.root,'.public','machine-handoff.json'),{force:true});
     this.save({phase:'active',active:this.state.previous,transfer:null});
   }
