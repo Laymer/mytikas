@@ -1,5 +1,5 @@
 import { homedir } from 'node:os';
-import { existsSync, rmdirSync } from 'node:fs';
+import { existsSync, rmdirSync, renameSync, rmSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, appendFileSync, readFileSync, statSync, lstatSync, openSync, closeSync, unlinkSync } from 'node:fs';
@@ -24,6 +24,9 @@ const tokenFile = managed?.token || resolve(root, '.public/tunnel-token');
 const env = { ...process.env };
 for (const key of Object.keys(env)) if (/^(DOCKER_HOST$|DOCKER_CONTEXT$|POSTGRES_|DATABASE_|RUNTIME_DATABASE_|SMTP_|EMAIL_|SESSION_|APP_ORIGIN$|PUBLIC_|DISCORD_|ADDON_|MEMBERSHIP_|MYTIKAS_|DEPLOYMENT_PROFILE$|INGRESS_MODE$|COMPOSE_)/.test(key)) delete env[key];
 const dc = [...(machine?.context ? ['--context', machine.context] : []), 'compose', '--project-name', managed?.project || 'mytikas-public', '--env-file', envFile, '-f', managed?.compose || resolve(root, 'compose.public.yaml')];
+const addonFile=resolve(root,'.public/addon-sync.json');
+const paired=existsSync(addonFile);
+if(paired)dc.push('-f',addonFile);
 function run(args, options = {}) {
   if (machine?.context && args[0] !== '--context') args = ['--context', machine.context, ...args];
   const result = spawnSync('docker', args, { cwd: root, env, stdio: 'inherit', ...options });
@@ -65,6 +68,7 @@ try {
     process.exit(0);
   }
   privateFile(envFile);
+  if(paired)privateFile(addonFile);
   if (managed?.compose?.endsWith('/compose.json')) privateFile(managed.compose);
   run(['compose', 'version', '--short'], { stdio: 'pipe' });
   run(['info'], { stdio: 'pipe' });
@@ -73,6 +77,8 @@ try {
     privateFile(tokenFile);
     if (!readFileSync(tokenFile, 'utf8').trim()) throw new Error('Tunnel token file is empty. Configure the named tunnel first.');
   }
+  const overlay=paired?JSON.parse(readFileSync(addonFile,'utf8')):null;
+  const synchronize=Boolean(overlay?.services?.synchronizer);
   let existing = false;
   if (['doctor','up'].includes(command)) {
     const resolved = JSON.parse(run([...dc,'config','--format','json'], {stdio:'pipe',encoding:'utf8'}).stdout);
@@ -83,7 +89,7 @@ try {
     for (const name of ['worker', ...(managed ? [] : ['migrate'])])
       if (services[name].image !== selected) throw new Error('Candidate service images differ.');
     const web = services.app.environment, worker = services.worker.environment;
-    const webOnly = ['ADDON_DOWNLOADS_PAUSED','DISCORD_CLIENT_ID','DISCORD_CLIENT_SECRET','DISCORD_INVITE_URL'];
+    const webOnly = ['ADDON_SUBMISSIONS_ENABLED','ADDON_DOWNLOADS_PAUSED','DISCORD_CLIENT_ID','DISCORD_CLIENT_SECRET','DISCORD_INVITE_URL'];
     const workerOnly = ['ADDON_RELEASE_TOKEN','DISCORD_BLACKLIST_CHANNEL_ID'];
     for (const key of new Set([...Object.keys(web), ...Object.keys(worker)])) {
       if (web[key] === worker[key]) continue;
@@ -118,6 +124,12 @@ try {
     if (mounts.length !== 1) throw new Error('Expected one named PostgreSQL volume.');
     const volume = resolved.volumes[mounts[0].source].name;
     const volumes = run(['volume','ls','--format','json'],{stdio:'pipe',encoding:'utf8'}).stdout.trim().split('\n').filter(Boolean).map(x=>JSON.parse(x));
+    if(!paired && volumes.some(v=>v.Name===(managed?.project || 'mytikas-public')+'_addon-archive-data'))
+      throw new Error('Archive database overlay missing; recover it before startup.');
+    if(paired) {
+      const archiveVolume=resolved.volumes['addon-archive-data'].name;
+      if(!volumes.some(v=>v.Name===archiveVolume))throw new Error('Retained archive database is unavailable. Restore the paired databases.');
+    }
     existing = volumes.some(v=>v.Name===volume);
     const dbId = run([...dc,'ps','-a','-q','db'],{stdio:'pipe',encoding:'utf8'}).stdout.trim();
     if ((dbId || managed) && !existing) throw new Error('Existing database volume is unavailable; refusing empty replacement.');
@@ -148,8 +160,10 @@ try {
     case 'doctor': if (args[0] === '--smtp') console.log('SMTP preflight passed; no message sent.'); console.log('Node 24, Docker, Compose, private configuration and tunnel token present. Verify remote tunnel route is app.mytikas.monster → http://127.0.0.1:8080.'); break;
     case 'up':
       // All candidate and schema checks complete before interrupting ingress.
+      if(paired)run([...dc,'up','-d','--no-deps','--wait','--wait-timeout','180','archive-db']);
       run([...dc, 'rm', '--stop', '--force', 'tunnel']);
       run([...dc, 'up', '-d', '--no-build', ...(managed || existing ? ['--no-deps'] : []), '--wait', '--wait-timeout', '180', 'app', 'worker']);
+      if(synchronize)run([...dc,'up','-d','--no-deps','--wait','--wait-timeout','180','synchronizer']);
       run([...dc, 'up', '-d', '--no-deps', '--force-recreate', 'tunnel']);
       break;
     case 'status': run([...dc, 'ps', '-a']); break;
@@ -157,8 +171,35 @@ try {
     case 'admin': run([...dc, 'exec', 'app', 'node', 'dist/admin-cli.js']); break;
     case 'stop': case 'down': run([...dc, command]); break;
     case 'backup': {
+      if(!paired) {
+        const archiveVolume=(managed?.project || 'mytikas-public')+'_addon-archive-data';
+        const volumes=run(['volume','ls','--format','{{.Name}}'],{stdio:'pipe',encoding:'utf8'}).stdout.trim().split('\n');
+        const sql=query=>run([...dc,'exec','-T','db','psql','-XAt','-U','mytikas_public','-d','mytikas_public','-v','ON_ERROR_STOP=1','-c',query],{stdio:'pipe',encoding:'utf8'}).stdout.trim();
+        if(volumes.includes(archiveVolume) || (sql("SELECT to_regclass('public.addon_submissions') IS NOT NULL")==='t' &&
+            sql('SELECT EXISTS(SELECT FROM addon_submissions)')==='t'))
+          throw new Error('Archive database overlay missing; recover it before backup.');
+      }
       const target = resolve(root, args[0] || `backups/mytikas-public-${new Date().toISOString().replace(/[:.]/g,'-')}.dump`);
       mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
+      if(paired) {
+        const stage=target+'.partial';
+        if(existsSync(target))throw new Error('Backup destination already exists.');
+        mkdirSync(stage,{mode:0o700});
+        const running=synchronize && run([...dc,'ps','--status','running','-q','synchronizer'],{stdio:'pipe',encoding:'utf8'}).stdout.trim();
+        try {
+          if(running)run([...dc,'stop','--timeout','60','synchronizer']);
+          for(const [service,database,file] of [['db','mytikas_public','database.dump'],['archive-db','mytikas_archive','archive.dump']]) {
+            const fd=openSync(resolve(stage,file),'wx',0o600);
+            try {run([...dc,'exec','-T',service,'pg_dump','-U',database,'-d',database,'-Fc'],{stdio:['ignore',fd,'pipe']});}
+            finally {closeSync(fd);}
+          }
+          renameSync(stage,target);
+        } finally {
+          rmSync(stage,{recursive:true,force:true});
+          if(running)run([...dc,'start','synchronizer']);
+        }
+        console.log('Private paired database backup saved in '+target);break;
+      }
       const fd = openSync(target, 'wx', 0o600);
       try { run([...dc, 'exec', '-T', 'db', 'pg_dump', '-U', 'mytikas_public', '-d', 'mytikas_public', '-Fc'], { stdio: ['ignore', fd, 'pipe'] }); }
       catch (error) { unlinkSync(target); throw error; }

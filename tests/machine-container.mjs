@@ -63,6 +63,12 @@ try {
   const a=new Isolated(join(root,'wsl')),b=new Isolated(join(root,'mac'));
   await a.prepare();await b.prepare();
   const oldA=await initial(a,'source'),oldB=await initial(b,'destination','f'.repeat(64));
+  // Preserve archive identity, the original bytes, and the sequence through both transfers.
+  a.createArchiveOverlay(oldA,a.inspect(a.id(oldA,'db')).Image);
+  a.startArchive(oldA,true);
+  a.sql(oldA,"CREATE TABLE archives(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY, archive bytea); INSERT INTO archives(archive) VALUES (decode('504b0304','hex'))",true);
+  a.dc(oldA,['up','-d','--no-deps','--wait','app']);
+  a.dc(oldA,['up','-d','--no-deps','--force-recreate','tunnel']);
   await a.migrate();assert.equal(a.state.phase,'handed-off');assert.equal(a.dc(oldA,['ps','-a','-q']),'');
   const first=a.state.export.target;assert.equal(inspectZip(first).configuration.SMTP_PASSWORD,c.SMTP_PASSWORD);assert.equal(inspectZip(first).configuration.PUBLIC_UID,'501');
   // Exercise import over a deliberately stopped destination while retaining its volume.
@@ -76,6 +82,9 @@ try {
   await b.migrate();assert.equal(b.state.highest,2);await a.import(b.state.export.target);assert.equal(a.state.phase,'active');assert.equal(a.state.highest,2);
   assert.equal(a.sql(a.state.active,"SELECT email || ':' || role || ':' || password_hash FROM users WHERE role='ADMIN'"),`source@fixture.test:ADMIN:${oldA.passwordHash}`);
   assert.equal(a.sql(a.state.active,"SELECT count(*) FROM sessions WHERE sid='preserved-session'"),'1');
+  assert.equal(a.sql(a.state.active,"SELECT id||':'||encode(archive,'hex') FROM archives",true),'1:504b0304');
+  assert.equal(a.sql(a.state.active,"SELECT nextval('archives_id_seq')",true),'2');
+  assert.equal(a.hasSynchronizer(a.state.active),false);
   assert.equal(a.sql(a.state.active,"SELECT attempts || ':' || lease_token FROM discord_jobs"),'3:00000000-0000-0000-0000-000000000004');
   assert.equal(a.sql(a.state.active,'SELECT count(*) FROM events'),'4');
   assert.equal(a.sql(a.state.active,'SELECT count(*) FROM role_events'),'1');

@@ -63,6 +63,14 @@ if(a.includes('pg_dump')){process.stdout.write('fixture-backup');if(process.env.
   env.FAIL_BACKUP='1';
   assert.equal(run('backup','backups/failure.dump').status,1);
   assert.throws(()=>statSync(join(root,'backups/failure.dump')));
+  const overlayPath=join(root,'.public/addon-sync.json');
+  writeFileSync(overlayPath,JSON.stringify({services:{'archive-db':{}}}),{mode:0o600});
+  assert.equal(run('backup','backups/failed-pair').status,1);
+  assert.throws(()=>statSync(join(root,'backups/failed-pair')));
+  delete env.FAIL_BACKUP;
+  assert.equal(run('backup','backups/paired').status,0);
+  for(const name of ['database.dump','archive.dump'])assert.equal(readFileSync(join(root,'backups/paired',name),'utf8'),'fixture-backup');
+  rmSync(overlayPath);
   assert.equal(run('down','--volumes').status,1);
   assert.equal(run('logs','--details').status,1);
   const persist=()=>writeFileSync(join(root,'fixture.json'),JSON.stringify(fixture));

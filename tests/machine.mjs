@@ -11,11 +11,12 @@ const images={app:'sha256:'+'a'.repeat(64),db:'sha256:'+'b'.repeat(64),tunnel:'s
 fs.writeFileSync(join(root,'migration'),'fixture');
 const migrations={'001_initial.sql':fileDigest(join(root,'migration')).sha256};
 const manifest={format:1,id:'1'.repeat(32),lineage:'2'.repeat(32),generation:1,commit:'3'.repeat(40),platform:'linux/amd64',images,migrations,fingerprint:'e'.repeat(64),files:{}};
-function archive(id='1',generation=1,change=()=>{}) {
+function archive(id='1',generation=1,change=()=>{},paired=false) {
   const dir=join(root,`archive-${id}-${generation}`);fs.mkdirSync(dir);
   fs.writeFileSync(join(dir,'database.dump'),'PGDMP-fixture');fs.writeFileSync(join(dir,'images.tar'),'fixture-images');fs.writeFileSync(join(dir,'configuration.json'),JSON.stringify(c));
   const m=structuredClone(manifest);m.id=id.repeat(32);m.generation=generation;
-  for(const name of ['database.dump','images.tar','configuration.json']){const f=fileDigest(join(dir,name));m.files[name]={sha256:f.sha256,size:f.size};}
+  if(paired){fs.writeFileSync(join(dir,'archive.dump'),'PGDMP-archives');m.format=2;m.archiveFingerprint=m.fingerprint;}
+  for(const name of ['database.dump','images.tar','configuration.json',...(paired?['archive.dump']:[])]){const f=fileDigest(join(dir,name));m.files[name]={sha256:f.sha256,size:f.size};}
   change(m);fs.writeFileSync(join(dir,'manifest.json'),JSON.stringify(m));const zip=dir+'.zip';writeZip(dir,zip);return zip;
 }
 class Fake extends Machine {
@@ -31,6 +32,18 @@ class Fake extends Machine {
   async publicCheck(){}
 }
 try {
+  const pairedZip=archive('9',1,()=>{},true);
+  const paired=inspectZip(pairedZip);
+  assert.equal(validateTransfer(paired).format,2);
+  const incomplete=structuredClone(paired);
+  incomplete.entries=incomplete.entries.filter(e=>e.name!=='archive.dump');
+  assert.throws(()=>validateTransfer(incomplete),/incomplete/);
+  const pairMachine=new Fake(join(root,'paired-host'));
+  await pairMachine.import(pairedZip);
+  const importedOverlay=JSON.parse(fs.readFileSync(pairMachine.addonOverlay(pairMachine.state.active)));
+  assert(importedOverlay.services['archive-db']);
+  assert.equal(importedOverlay.services.app.environment.ADDON_SUBMISSIONS_ENABLED,'0');
+  assert.equal(importedOverlay.services.synchronizer,undefined);
   const zip=archive();const info=inspectZip(zip);validateTransfer(info);
   assert.equal(fs.statSync(zip).mode&0o777,0o600);
   const extracted=join(root,'extract');fs.mkdirSync(extracted);extractZip(zip,extracted);

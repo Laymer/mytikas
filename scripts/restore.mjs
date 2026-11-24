@@ -40,6 +40,7 @@ function restoreUnlocked({ archive, database, replace = false, publicProfile = f
     const state = existsSync(stateFile) ? JSON.parse(readFileSync(stateFile, 'utf8')) : null;
     if ((state && !['active','idle'].includes(state.phase)) || (!state?.active && existsSync(resolve(root, '.public/machine-handoff.json')))) throw new Error('Public restore blocked during or after handoff; use the machine launcher.');
     const d = state?.active;
+    if(replace && target==='mytikas_public' && existsSync(resolve(d?.root || root,'.public/addon-sync.json')))throw new Error('Restore both add-on databases together as described in docs/ADDON-SYNCHRONIZER.md.');
     delete env.DOCKER_HOST; delete env.DOCKER_CONTEXT;
     prefix = [...(state?.context ? ['--context',state.context] : []), 'compose', '--project-name', d?.project || 'mytikas-public', '--env-file', d?.env || resolve(root, '.env.public'), '-f', d?.compose || resolve(root, 'compose.public.yaml'), 'exec', '-T', 'db'];
   } else {

@@ -1,5 +1,8 @@
 # Move public hosting between WSL2 and an Intel Mac
 
+Reviewed add-on installations transfer both PostgreSQL databases in format 2. Use the updated launcher on each host and reattach the destination’s GitHub App credentials after import. See [archive backup and handoff](ADDON-SYNCHRONIZER.md#backup-recovery-and-transfer).
+
+
 The standalone `mytikas-machine.sh` moves the **public** deployment. Local/demo deployments and the GitHub Pages landing page are independent. Hosting is unavailable between export and successful import. Copies can be renamed `machine1.sh` and `machine2.sh`.
 
 ```bash

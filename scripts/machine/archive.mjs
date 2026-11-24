@@ -1,6 +1,6 @@
 // Deliberately narrow ZIP profile: stored regular files, no ZIP64, extras or comments.
 // Stream payloads; never use archive names as paths before validating the entire directory.
-import { openSync, closeSync, readSync, writeSync, statSync, fsyncSync } from 'node:fs';
+import { existsSync, openSync, closeSync, readSync, writeSync, statSync, fsyncSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 const table = Array.from({length:256},(_,n)=>{for(let i=0;i<8;i++) n=n&1?0xedb88320^(n>>>1):n>>>1;return n>>>0;});
@@ -20,7 +20,8 @@ export const archiveNames=['database.dump','configuration.json','images.tar','ma
 export function writeZip(directory, target) {
   const out=openSync(target,'wx',0o600), central=[]; let offset=0;
   try {
-    for(const name of archiveNames) {
+    const names = existsSync(join(directory,'archive.dump')) ? [...archiveNames,'archive.dump'] : archiveNames;
+    for(const name of names) {
       const path=join(directory,name), meta=fileDigest(path), bytes=Buffer.from(name);
       if(meta.size+offset>0xffffff00) throw new Error('Transfer exceeds supported 4 GiB ZIP limit');
       const header=Buffer.alloc(30); header.writeUInt32LE(0x04034b50);header.writeUInt16LE(20,4);
@@ -32,7 +33,7 @@ export function writeZip(directory, target) {
       entry.writeUInt32LE((0o100600<<16)>>>0,38);entry.writeUInt32LE(offset,42);central.push(entry,bytes);offset+=30+bytes.length+meta.size;
     }
     const directoryBytes=Buffer.concat(central);writeSync(out,directoryBytes);
-    const end=Buffer.alloc(22);end.writeUInt32LE(0x06054b50);end.writeUInt16LE(4,8);end.writeUInt16LE(4,10);end.writeUInt32LE(directoryBytes.length,12);end.writeUInt32LE(offset,16);
+    const end=Buffer.alloc(22);end.writeUInt32LE(0x06054b50);end.writeUInt16LE(names.length,8);end.writeUInt16LE(names.length,10);end.writeUInt32LE(directoryBytes.length,12);end.writeUInt32LE(offset,16);
     writeSync(out,end);fsyncSync(out);
   } finally {closeSync(out);}
 }
@@ -42,12 +43,13 @@ export function inspectZip(file) {
   try {
     if(size<22||size>0xffffffff)throw new Error('Unsupported ZIP size');
     const end=read(size-22,22);
-    if(end.readUInt32LE(0)!==0x06054b50||end.readUInt16LE(4)||end.readUInt16LE(6)||end.readUInt16LE(8)!==4||end.readUInt16LE(10)!==4||end.readUInt16LE(20))throw new Error('Unsupported ZIP directory');
+    if(end.readUInt32LE(0)!==0x06054b50||end.readUInt16LE(4)||end.readUInt16LE(6)||![4,5].includes(end.readUInt16LE(8))||end.readUInt16LE(10)!==end.readUInt16LE(8)||end.readUInt16LE(20))throw new Error('Unsupported ZIP directory');
     let at=end.readUInt32LE(16), next=0;const entries=[];
     if(at+end.readUInt32LE(12)!==size-22)throw new Error('Invalid ZIP bounds');
-    for(let i=0;i<4;i++) {
+    const names = end.readUInt16LE(8) === 5 ? [...archiveNames,'archive.dump'] : archiveNames;
+    for(let i=0;i<names.length;i++) {
       const h=read(at,46), len=h.readUInt16LE(28), name=read(at+46,len).toString('utf8');
-      if(h.readUInt32LE(0)!==0x02014b50||h.readUInt16LE(8)||h.readUInt16LE(10)||h.readUInt16LE(30)||h.readUInt16LE(32)||h.readUInt16LE(34)||h.readUInt32LE(20)!==h.readUInt32LE(24)||!archiveNames.includes(name)||entries.some(e=>e.name===name)||((h.readUInt32LE(38)>>>16)&0o170000)!==0o100000)throw new Error('Unsafe or unsupported ZIP entry');
+      if(h.readUInt32LE(0)!==0x02014b50||h.readUInt16LE(8)||h.readUInt16LE(10)||h.readUInt16LE(30)||h.readUInt16LE(32)||h.readUInt16LE(34)||h.readUInt32LE(20)!==h.readUInt32LE(24)||!names.includes(name)||entries.some(e=>e.name===name)||((h.readUInt32LE(38)>>>16)&0o170000)!==0o100000)throw new Error('Unsafe or unsupported ZIP entry');
       const start=h.readUInt32LE(42), local=read(start,30), bytes=h.readUInt32LE(24);
       if(start!==next||local.readUInt32LE(0)!==0x04034b50||local.readUInt16LE(6)||local.readUInt16LE(8)||local.readUInt16LE(28)||local.readUInt16LE(26)!==len||read(start+30,len).toString('utf8')!==name||local.readUInt32LE(14)!==h.readUInt32LE(16)||local.readUInt32LE(18)!==bytes||local.readUInt32LE(22)!==bytes)throw new Error('Conflicting ZIP entry');
       next=start+30+len+bytes;
