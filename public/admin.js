@@ -144,7 +144,7 @@ async function loadDetail(id) {
       ["reject", "Reject"],
     ],
     REJECTED: [["reopen", "Reopen"]],
-    REOPENED: [],
+    REOPENED: user.role === "ADMIN" ? [["join", "Mark as joined"]] : [],
     JOINED: user.role === "ADMIN" ? [["remove", "Remove membership"]] : [],
     REMOVED: user.role === "ADMIN" ? [["restore", "Restore membership"]] : [],
   };

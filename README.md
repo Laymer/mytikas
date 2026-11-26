@@ -65,6 +65,7 @@ SUBMITTED → APPROVED → JOINED
     ↓          ↓
  REJECTED ←─────┘
     ↓ staff reopen
+ REOPENED → admin confirms existing membership → JOINED
  REOPENED → applicant revises and resubmits → SUBMITTED
 ```
 
@@ -121,7 +122,7 @@ All mutation requests accept JSON, require the session's `X-CSRF-Token`, and rej
 | `POST /api/admin/applications/:id/approve` | Approve a submitted application |
 | `POST /api/admin/applications/:id/reject` | Reject a submitted or approved application |
 | `POST /api/admin/applications/:id/reopen` | Reopen a rejected application |
-| `POST /api/admin/applications/:id/join` | Manual joining confirmation |
+| `POST /api/admin/applications/:id/join` | Confirm joining for an approved applicant (staff) or a reopened applicant (admin only) |
 | `POST /api/admin/applications/:id/check` | Staff membership check |
 | `GET /api/admin/users?q=...` | Admin-only email lookup, up to 50 matches |
 | `POST /api/admin/users/:id/role` | Admin-only role change: `{ "role": "MODERATOR" }` |

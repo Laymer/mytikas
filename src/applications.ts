@@ -105,6 +105,7 @@ export async function assertRole(
       : !["ADMIN", "MODERATOR"].includes(user.role))
   )
     throw new HttpError(403, "Staff permission required.");
+  return user.role as User["role"];
 }
 export async function transition(
   pool: Pool,
@@ -119,12 +120,12 @@ export async function transition(
     reopen: { from: ["REJECTED"], to: "REOPENED" },
     remove: { from: ["JOINED"], to: "REMOVED" },
     restore: { from: ["REMOVED"], to: "JOINED" },
-    join: { from: ["APPROVED"], to: "JOINED" },
+    join: { from: ["APPROVED", "REOPENED"], to: "JOINED" },
   };
   const spec = actions[action];
   if (!spec) throw new HttpError(400, "Unknown action.");
   return transaction(pool, async (c) => {
-    await assertRole(c, actor, ["remove", "restore"].includes(action));
+    const role = await assertRole(c, actor, ["remove", "restore"].includes(action));
     if (["remove", "restore"].includes(action)) {
       if (!note.trim()) throw new HttpError(400, "A reason is required.");
       await c.query("SELECT pg_advisory_xact_lock(3)");
@@ -140,6 +141,8 @@ export async function transition(
         409,
         "This action is no longer available. Refresh the application.",
       );
+    if (action === "join" && app.status === "REOPENED" && role !== "ADMIN")
+      throw new HttpError(403, "An administrator must confirm membership for a reopened application.");
     if (action === "remove") {
       await clearRosterSlots(c,id);
     }

@@ -293,6 +293,41 @@ try {
     stolen.cookie = previous;
     assert.equal((await stolen.request("/api/application")).status, 401);
   });
+  await test("only admins can confirm reopened membership and preserve its history", async () => {
+    await h.pool.query("DELETE FROM auth_limits");
+    const member = client();
+    await member.signup("Reopened Peak");
+    const before = await member.application();
+    const id = before.application.id;
+    await action(mod, id, "reject");
+    await action(mod, id, "reopen");
+    assert.equal((await action(mod, id, "join")).status, 403);
+    const note = "Confirmed existing membership.";
+    assert.equal((await action(admin, id, "join", {note})).status, 200);
+    assert.equal((await action(admin, id, "join")).status, 409);
+    const after = await member.application();
+    assert.equal(after.application.status, "JOINED");
+    assert.equal(after.application.joined_via, "MANUAL");
+    assert.deepEqual(after.submissions, before.submissions);
+    const event = after.events.at(-1);
+    assert.deepEqual([event.from_status, event.to_status, event.method, event.note],
+      ["REOPENED", "JOINED", "MANUAL", note]);
+    assert.equal(after.events.length, before.events.length + 3);
+    assert.ok(!(await admin.request("/api/admin/applications")).data.applications.some((a: any) => a.id === id));
+  });
+  await test("resubmission and manual confirmation cannot both consume a reopening", async () => {
+    const member = client();
+    await member.signup("Racing Ridge");
+    const id = (await member.application()).application.id;
+    await action(admin, id, "reject");
+    await action(admin, id, "reopen");
+    const rules = (await member.request("/api/rules")).data;
+    const results = await Promise.all([
+      action(admin, id, "join"),
+      member.request("/api/application", {characterName: "Racing Ridge", motivation: "Revision", rulesId: rules.id, acceptRules: true}),
+    ]);
+    assert.deepEqual(results.map(r => r.status).sort(), [200, 409]);
+  });
   const manual = client();
   await manual.signup("Manual Peak");
   const mid = (await manual.application()).application.id;

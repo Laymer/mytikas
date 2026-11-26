@@ -73,7 +73,7 @@ Review the motivation, accepted rules, submission history, and timeline. Add a
 - **Reject** declines a submitted or approved application.
 - **Reopen** lets a rejected applicant revise and resubmit.
 - **Check now** verifies an approved character's guild membership.
-- **Mark as joined** records a staff-confirmed invitation for an approved applicant.
+- **Mark as joined** confirms guild membership for an approved applicant. An administrator can also use it after reopening to correct a rejection of an existing guild member. The original submission and review history are preserved.
 
 ![Staff queue with Demo Submitted selected, a review note, and Approve and Reject actions](images/04-staff-review.png)
 

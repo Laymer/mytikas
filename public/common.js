@@ -148,7 +148,7 @@ const descriptions = {
   REJECTED:
     "Your application was declined. Staff can reopen it if corrections are needed.",
   REOPENED:
-    "Staff have reopened your application. Revise it below and accept the current rules to resubmit.",
+    "Staff have reopened your application. You can revise it and accept the current rules to resubmit. If you already joined the guild, an administrator can confirm your membership.",
   JOINED: "Welcome to Olympus Mytikas. Your membership is confirmed.",
 };
 export function pauseNotice({membershipDecisionsPaused, addonDownloadsPaused}) {

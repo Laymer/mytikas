@@ -203,6 +203,18 @@ try {
   await expect(
     applicant.getByRole("heading", { name: "Applications", exact: true }),
   ).toBeVisible();
+  const corrected = new Client(h.cfg.origin);
+  await corrected.signup("Reopened Member");
+  await applicant.getByRole("button", { name: "Refresh queue" }).click();
+  await applicant.getByRole("link", { name: /Reopened Member/ }).click();
+  await applicant.getByRole("button", { name: "Reject", exact: true }).click();
+  await applicant.getByRole("button", { name: "Reopen", exact: true }).click();
+  await expect(applicant.locator("#detail .tag")).toHaveText("REOPENED");
+  await expect(applicant.getByRole("button", { name: "Mark as joined" })).toHaveCount(0);
+  await staff.getByRole("button", { name: "Refresh queue" }).click();
+  await staff.getByRole("link", { name: /Reopened Member/ }).click();
+  await staff.getByRole("button", { name: "Mark as joined" }).click();
+  await expect(staff.locator("#detail .tag")).toHaveText("JOINED");
   const manualClient = new Client(h.cfg.origin);
   await manualClient.signup("Browser Manual");
   await staff.getByRole("button", { name: "Refresh queue" }).click();
